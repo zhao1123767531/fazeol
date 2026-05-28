@@ -77,7 +77,7 @@ const App = () => {
 
   return (
     <>
-      {!me && <Login users={state.users} setState={setState} doLogin={doLogin} toast={toast} />}
+      {!me && <Login users={state.users} state={state} setState={setState} doLogin={doLogin} toast={toast} />}
       {me && me.role === "admin" && <Admin state={state} setState={setState} toast={toast} me={me} doLogout={doLogout} />}
       {me && me.role === "teacher" && <Teacher state={state} setState={setState} toast={toast} me={me} doLogout={doLogout} />}
       {me && me.role === "student" && <Student state={state} setState={setState} toast={toast} me={me} doLogout={doLogout} />}
@@ -96,15 +96,12 @@ const App = () => {
 };
 
 // ============ 登录页 ============
-const Login = ({ users, setState, doLogin, toast }) => {
-  const [mode, setMode] = React.useState("login");
+const Login = ({ users, state, setState, doLogin, toast }) => {
   const [id, setId] = React.useState("");
   const [pw, setPw] = React.useState("");
-  const [name, setName] = React.useState("");
-  const [role, setRole] = React.useState("student");
-  const [className, setClassName] = React.useState("");
-  const [subject, setSubject] = React.useState("");
   const [busy, setBusy] = React.useState(false);
+  const quote = state.settings?.loginQuote || "法不阿贵，绳不挠曲。";
+  const quoteSource = state.settings?.loginQuoteSource || "《韩非子》";
 
   const submit = async () => {
     setBusy(true);
@@ -121,20 +118,6 @@ const Login = ({ users, setState, doLogin, toast }) => {
     }
   };
 
-  const register = async () => {
-    setBusy(true);
-    try{
-      const result = await registerRemote({ id:id.trim(), password:pw, name:name.trim(), role, className, subject });
-      if(result.state) setState(result.state);
-      toast("注册成功，已为你登录", "ok");
-      doLogin(result.user.id);
-    }catch(err){
-      toast(err.message || "注册失败", "danger");
-    }finally{
-      setBusy(false);
-    }
-  };
-
   const fillDemo = (uid, pwd) => {setId(uid);setPw(pwd);};
 
   return (
@@ -145,8 +128,8 @@ const Login = ({ users, setState, doLogin, toast }) => {
           <div className="tag">FA · ZE · ONLINE</div>
         </div>
         <div className="quote">
-          兼听博览，明辨笃行。<br />
-          学之广在于不倦，问之审在于穷理。」
+          {quote}<br />
+          <span>{quoteSource}</span>
         </div>
         <div className="seal"></div>
         <div className="footer">专注中国政法大学考研
@@ -154,47 +137,22 @@ const Login = ({ users, setState, doLogin, toast }) => {
       </div>
       <div className="login-form">
         <div className="login-card">
-          <div className="tabs" style={{marginBottom:16}}>
-            <div className={"tab"+(mode==="login"?" active":"")} onClick={()=>setMode("login")}>登录</div>
-            <div className={"tab"+(mode==="register"?" active":"")} onClick={()=>setMode("register")}>注册</div>
-          </div>
-          <div className="eyebrow">{mode==="login" ? "SIGN IN" : "CREATE ACCOUNT"}</div>
-          <h2>{mode==="login" ? "登录到法泽在线" : "注册真实账号"}</h2>
+          <div className="eyebrow">SIGN IN</div>
+          <h2>登录到法泽在线</h2>
+          <div className="muted tiny mb-16">账号由管理员统一创建。教师账号也只能由管理员添加。</div>
 
           <div className="field">
-            <label>账号（学号 / 工号 / 自定义账号）</label>
-            <input className="input" value={id} onChange={(e) => setId(e.target.value)} onKeyDown={(e) => e.key === "Enter" && (mode==="login" ? submit() : register())} placeholder="如 S2024001" autoFocus />
+            <label>账号（学号 / 工号 / admin）</label>
+            <input className="input" value={id} onChange={(e) => setId(e.target.value)} onKeyDown={(e) => e.key === "Enter" && submit()} placeholder="如 S2024001" autoFocus />
           </div>
-          {mode === "register" && (
-            <>
-              <div className="field">
-                <label>姓名</label>
-                <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="请输入真实姓名" />
-              </div>
-              <div className="grid cols-2 gap-12">
-                <div className="field"><label>身份</label>
-                  <select className="select" value={role} onChange={(e)=>setRole(e.target.value)}>
-                    <option value="student">学生</option>
-                    <option value="teacher">教师</option>
-                  </select></div>
-                {role === "student" ? (
-                  <div className="field"><label>班级</label>
-                    <input className="input" value={className} onChange={(e)=>setClassName(e.target.value)} placeholder="如 法学2401" /></div>
-                ) : (
-                  <div className="field"><label>学科</label>
-                    <input className="input" value={subject} onChange={(e)=>setSubject(e.target.value)} placeholder="如 民法" /></div>
-                )}
-              </div>
-            </>
-          )}
           <div className="field">
             <label>密码</label>
             <input className="input" type="password" value={pw} onChange={(e) => setPw(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && (mode==="login" ? submit() : register())} placeholder={mode==="login" ? "请输入密码" : "至少 6 位"} />
+            onKeyDown={(e) => e.key === "Enter" && submit()} placeholder="请输入密码" />
           </div>
 
-          <button className="btn full lg" disabled={busy} onClick={mode==="login" ? submit : register}>
-            {busy ? "处理中…" : mode==="login" ? "登 录" : "注 册"}
+          <button className="btn full lg" disabled={busy} onClick={submit}>
+            {busy ? "处理中…" : "登 录"}
           </button>
 
           <div className="divider"></div>

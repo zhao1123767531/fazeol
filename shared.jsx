@@ -13,6 +13,11 @@ const initialState = () => {
   const monday = T0 - weekday*dayMs;
 
   return ({
+  settings:{
+    loginQuote:"法不阿贵，绳不挠曲。",
+    loginQuoteSource:"《韩非子》",
+  },
+
   users: [
     { id:"admin", name:"系统管理员", role:"admin", password:"admin", firstLogin:false },
     { id:"T001", name:"陈砚清",  role:"teacher", password:"T001", firstLogin:true, subject:"民法" },
@@ -316,23 +321,30 @@ const loginRemote = async (id, password) => apiJSON("/api/login", {
   method:"POST",
   body:JSON.stringify({id, password}),
 });
-const registerRemote = async (payload) => apiJSON("/api/register", {
-  method:"POST",
-  body:JSON.stringify(payload),
-});
 const changePasswordRemote = async (payload) => apiJSON("/api/change-password", {
   method:"POST",
   body:JSON.stringify(payload),
 });
-const uploadRemote = async (file) => {
-  const res = await fetch(`/api/upload?filename=${encodeURIComponent(file.name)}`, {
-    method:"POST",
-    headers:{ "Content-Type": file.type || "application/octet-stream" },
-    body:file,
+const uploadRemote = async (file, onProgress) => {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", `/api/upload?filename=${encodeURIComponent(file.name)}`);
+    xhr.setRequestHeader("Content-Type", file.type || "application/octet-stream");
+    xhr.upload.onprogress = (evt) => {
+      if(evt.lengthComputable && onProgress) onProgress(Math.round(evt.loaded / evt.total * 100));
+    };
+    xhr.onload = () => {
+      try{
+        const data = JSON.parse(xhr.responseText || "{}");
+        if(xhr.status < 200 || xhr.status >= 300) throw new Error(data.error || "上传失败");
+        resolve(data.file);
+      }catch(err){
+        reject(err);
+      }
+    };
+    xhr.onerror = () => reject(new Error("上传失败，请检查网络"));
+    xhr.send(file);
   });
-  const data = await res.json().catch(()=>({}));
-  if(!res.ok) throw new Error(data.error || "上传失败");
-  return data.file;
 };
 
 // ---------- 工具函数 ----------
@@ -634,7 +646,7 @@ const ProfileModal = ({me, state, setState, onClose, toast})=>{
 // 暴露
 Object.assign(window, {
   STORE_KEY, loadState, saveState, resetState,
-  loadStateRemote, saveStateRemote, loginRemote, registerRemote, changePasswordRemote, uploadRemote,
+  loadStateRemote, saveStateRemote, loginRemote, changePasswordRemote, uploadRemote,
   fmtBytes, fmtTime, fmtDate, fmtClock, fmtRel, fmtTimeLocal, parseLocal,
   examStatus, statusLabel, statusTagClass, liveStatus, uid, pad2,
   Toast, Modal, Empty, Tag, Countdown, useNow,

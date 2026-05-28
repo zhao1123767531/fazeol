@@ -585,6 +585,54 @@ a:hover{color:var(--accent)}
   border-radius:var(--r-md);
   background:#0f1726;
 }
+.player-shell{
+  border-radius:var(--r-md);
+  overflow:hidden;
+  background:#0f1726;
+}
+.player-shell .video-player{border-radius:0}
+.player-toolbar{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:12px;
+  padding:10px 12px;
+  background:#111827;
+  color:#e7e1d2;
+}
+.sm-select{
+  width:auto;
+  height:32px;
+  padding:0 28px 0 10px;
+  font-size:12px;
+}
+.upload-progress{
+  margin-top:10px;
+  height:22px;
+  border:1px solid var(--paper-line);
+  border-radius:999px;
+  background:#fff;
+  position:relative;
+  overflow:hidden;
+}
+.upload-progress.compact{height:18px; margin-top:8px}
+.upload-progress-bar{
+  position:absolute;
+  left:0; top:0; bottom:0;
+  width:0;
+  background:linear-gradient(90deg, var(--accent-soft), var(--accent));
+}
+.upload-progress span{
+  position:relative;
+  z-index:1;
+  display:block;
+  text-align:center;
+  line-height:20px;
+  font-size:11px;
+  color:var(--ink-900);
+  font-family:var(--mono);
+}
+.upload-progress.compact span{line-height:16px}
 @keyframes shimmer{0%{transform:translateX(-100%)} 100%{transform:translateX(100%)}}
 
 .pdf-stage{

@@ -620,19 +620,22 @@ const PerQuestionUploader = ({exam, onSubmit, toast})=>{
   });
   const refs = React.useRef({});
   refs.current = refs.current || {};
+  const [uploading, setUploading] = React.useState(null);
 
   const onPick = async (qid, list)=>{
     if(!list || list.length===0) return;
     try{
-      toast?.("正在上传作答文件…");
+      setUploading({qid, pct:0});
       const arr = [];
       for(const file of Array.from(list)){
-        arr.push(await uploadRemote(file));
+        arr.push(await uploadRemote(file, (pct)=>setUploading({qid, pct})));
       }
       setFiles(s=>({...s, [qid]: [...(s[qid]||[]), ...arr]}));
       toast?.("作答文件已上传", "ok");
     }catch(err){
       toast?.(err.message || "上传失败", "danger");
+    }finally{
+      setUploading(null);
     }
   };
   const onRemove = (qid, idx)=>{
@@ -676,6 +679,12 @@ const PerQuestionUploader = ({exam, onSubmit, toast})=>{
                     ? `+ 点击上传第 ${q.id.replace("Q","")} 题作答（PDF / 图片，可多文件）`
                     : `+ 继续添加（已 ${list.length} 个文件）`}
                 </div>
+                {uploading?.qid === q.id && (
+                  <div className="upload-progress compact">
+                    <div className="upload-progress-bar" style={{width:`${uploading.pct}%`}}></div>
+                    <span>{uploading.pct}%</span>
+                  </div>
+                )}
                 <input ref={el=>refs.current[q.id]=el} type="file" multiple
                   accept=".pdf,image/*" style={{display:"none"}}
                   onChange={e=>onPick(q.id, e.target.files)} />

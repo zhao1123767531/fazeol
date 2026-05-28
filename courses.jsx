@@ -242,6 +242,7 @@ const CourseDetail = ({course, state, setState, toast, me, canManage, onBack, on
 const LessonView = ({lesson, course, canManage, isDone, onToggleDone, onUpdate, onDelete, toast, state, setState, me})=>{
   const [edit, setEdit] = React.useState(false);
   const [draft, setDraft] = React.useState({...lesson});
+  const [uploadPct, setUploadPct] = React.useState(null);
   const fileRef = React.useRef();
 
   React.useEffect(()=>{ setDraft({...lesson}); setEdit(false); }, [lesson.id]);
@@ -249,12 +250,14 @@ const LessonView = ({lesson, course, canManage, isDone, onToggleDone, onUpdate, 
   const onFile = async (f)=>{
     if(!f) return;
     try{
-      toast("正在上传文件…");
-      const file = await uploadRemote(f);
+      setUploadPct(0);
+      const file = await uploadRemote(f, setUploadPct);
       setDraft({...draft, file});
       toast("文件已上传", "ok");
     }catch(err){
       toast(err.message || "上传失败", "danger");
+    }finally{
+      setUploadPct(null);
     }
   };
 
@@ -305,6 +308,12 @@ const LessonView = ({lesson, course, canManage, isDone, onToggleDone, onUpdate, 
             <input ref={fileRef} type="file"
               accept={draft.kind==="video"?"video/*":".pdf"}
               style={{display:"none"}} onChange={e=>onFile(e.target.files[0])} />
+            {uploadPct !== null && (
+              <div className="upload-progress">
+                <div className="upload-progress-bar" style={{width:`${uploadPct}%`}}></div>
+                <span>{uploadPct}%</span>
+              </div>
+            )}
           </div>
         )}
 
@@ -337,7 +346,7 @@ const LessonView = ({lesson, course, canManage, isDone, onToggleDone, onUpdate, 
         {lesson.kind === "video" && (
           <div>
             {lesson.file?.url ? (
-              <video className="video-player" src={lesson.file.url} controls preload="metadata"></video>
+              <VideoPlayer lesson={lesson} />
             ) : (
               <div className="video-stage">
                 <div className="play-btn">▶</div>
@@ -385,6 +394,45 @@ const LessonView = ({lesson, course, canManage, isDone, onToggleDone, onUpdate, 
         course={course} lesson={lesson}
         state={state} setState={setState} me={me} canManage={canManage} toast={toast}
       />
+    </div>
+  );
+};
+
+const VideoPlayer = ({lesson})=>{
+  const ref = React.useRef();
+  const [speed, setSpeed] = React.useState(1);
+  const [muted, setMuted] = React.useState(false);
+
+  const setRate = (rate) => {
+    setSpeed(rate);
+    if(ref.current) ref.current.playbackRate = rate;
+  };
+
+  const toggleMute = () => {
+    const next = !muted;
+    setMuted(next);
+    if(ref.current) ref.current.muted = next;
+  };
+
+  return (
+    <div className="player-shell">
+      <video ref={ref} className="video-player" src={lesson.file.url} controls preload="metadata" playsInline></video>
+      <div className="player-toolbar">
+        <div className="muted tiny mono">{lesson.file.name}</div>
+        <div className="row gap-8">
+          <button className="btn subtle sm" onClick={()=>{
+            if(ref.current) ref.current.requestPictureInPicture?.();
+          }}>画中画</button>
+          <button className="btn subtle sm" onClick={toggleMute}>{muted ? "取消静音" : "静音"}</button>
+          <select className="select sm-select" value={speed} onChange={(e)=>setRate(Number(e.target.value))}>
+            <option value="0.75">0.75x</option>
+            <option value="1">1x</option>
+            <option value="1.25">1.25x</option>
+            <option value="1.5">1.5x</option>
+            <option value="2">2x</option>
+          </select>
+        </div>
+      </div>
     </div>
   );
 };

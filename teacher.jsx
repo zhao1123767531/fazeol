@@ -175,15 +175,19 @@ const TeacherExams = ({ state, setState, toast, me, myExams, onOpen }) => {
 // ============ 考试编辑器（教师 / 管理员复用） ============
 const ExamEditor = ({ exam, state, me, onClose, onSave }) => {
   const [e, setE] = React.useState({ ...exam });
+  const [uploadPct, setUploadPct] = React.useState(null);
   const fileRef = React.useRef();
 
   const onFile = async (f) => {
     if (!f) return;
     try {
-      const file = await uploadRemote(f);
+      setUploadPct(0);
+      const file = await uploadRemote(f, setUploadPct);
       setE({ ...e, paperFile: file });
     } catch (err) {
       alert(err.message || "上传失败");
+    } finally {
+      setUploadPct(null);
     }
   };
   const updQ = (i, patch) => {
@@ -251,6 +255,12 @@ const ExamEditor = ({ exam, state, me, onClose, onSave }) => {
             </div>
           }
           <input ref={fileRef} type="file" accept=".pdf,image/*" style={{ display: "none" }} onChange={(ev) => onFile(ev.target.files[0])} />
+          {uploadPct !== null && (
+            <div className="upload-progress">
+              <div className="upload-progress-bar" style={{ width: `${uploadPct}%` }}></div>
+              <span>{uploadPct}%</span>
+            </div>
+          )}
         </div>
 
         <div className="field">

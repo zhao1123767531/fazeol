@@ -9,6 +9,9 @@ const dataFile = path.join(dataDir, "state.json");
 const uploadsDir = path.join(root, "uploads");
 const port = Number(process.env.PORT || 3000);
 const host = process.env.HOST || "127.0.0.1";
+const usePostgres = Boolean(process.env.DATABASE_URL);
+const useVercelBlob = Boolean(process.env.BLOB_READ_WRITE_TOKEN);
+let pgPoolPromise = null;
 
 const mimeTypes = {
   ".html": "text/html; charset=utf-8",
@@ -70,25 +73,80 @@ const publicUser = (user) => {
   return safe;
 };
 
-const publicState = (state) => ({
+const applyStateDefaults = (state) => ({
   ...state,
-  users: (state.users || []).map(publicUser),
+  settings:{
+    loginQuote:"法不阿贵，绳不挠曲。",
+    loginQuoteSource:"《韩非子》",
+    ...(state?.settings || {}),
+  },
 });
 
-const readStateRaw = () => {
+const publicState = (state) => ({
+  ...applyStateDefaults(state || {}),
+  users: (state?.users || []).map(publicUser),
+});
+
+const getPgPool = async () => {
+  if(!pgPoolPromise) {
+    pgPoolPromise = import("pg").then(({ Pool }) => new Pool({
+      connectionString: process.env.DATABASE_URL,
+      ssl: process.env.PGSSLMODE === "disable" ? false : { rejectUnauthorized:false },
+    }));
+  }
+  return pgPoolPromise;
+};
+
+const ensurePg = async () => {
+  const pool = await getPgPool();
+  await pool.query(`
+    create table if not exists faze_kv (
+      key text primary key,
+      value jsonb not null,
+      updated_at timestamptz not null default now()
+    )
+  `);
+  return pool;
+};
+
+const readLocalState = () => {
   if(!fs.existsSync(dataFile)) return null;
   return JSON.parse(fs.readFileSync(dataFile, "utf8"));
 };
 
-const writeStateRaw = (state) => {
+const writeLocalState = (state) => {
   fs.mkdirSync(dataDir, { recursive:true });
   fs.writeFileSync(dataFile, JSON.stringify(state, null, 2));
 };
 
-const normalizeIncomingState = (incoming) => {
-  const existing = readStateRaw() || {};
+const readStateRaw = async () => {
+  if(!usePostgres) return readLocalState();
+  const pool = await ensurePg();
+  const result = await pool.query("select value from faze_kv where key = $1", ["state"]);
+  if(result.rows[0]?.value) return result.rows[0].value;
+  const local = readLocalState();
+  if(local) await writeStateRaw(local);
+  return local;
+};
+
+const writeStateRaw = async (state) => {
+  if(!usePostgres) {
+    writeLocalState(state);
+    return;
+  }
+  const pool = await ensurePg();
+  await pool.query(
+    `insert into faze_kv (key, value, updated_at)
+     values ($1, $2::jsonb, now())
+     on conflict (key) do update set value = excluded.value, updated_at = now()`,
+    ["state", JSON.stringify(state)]
+  );
+};
+
+const normalizeIncomingState = async (incoming) => {
+  const existing = await readStateRaw() || {};
   const existingById = new Map((existing.users || []).map((u) => [u.id, u]));
-  const normalized = { ...incoming };
+  const normalized = applyStateDefaults(incoming);
 
   normalized.users = (incoming.users || []).map((user) => {
     const old = existingById.get(user.id);
@@ -115,7 +173,7 @@ const safeUploadName = (name) => {
   return base || "upload.bin";
 };
 
-const saveUpload = (req, originalName) => new Promise((resolve, reject) => {
+const saveLocalUpload = (req, originalName) => new Promise((resolve, reject) => {
   fs.mkdirSync(uploadsDir, { recursive:true });
   const safeName = safeUploadName(originalName);
   const ext = path.extname(safeName);
@@ -146,6 +204,30 @@ const saveUpload = (req, originalName) => new Promise((resolve, reject) => {
   req.on("error", reject);
 });
 
+const saveBlobUpload = async (req, originalName) => {
+  const { put } = await import("@vercel/blob");
+  const safeName = safeUploadName(originalName);
+  const pathname = `uploads/${Date.now()}-${crypto.randomBytes(6).toString("hex")}-${safeName}`;
+  const blob = await put(pathname, req, {
+    access:"public",
+    addRandomSuffix:false,
+  });
+  return {
+    name:safeName,
+    storedName:blob.pathname || pathname,
+    size:Number(req.headers["content-length"] || 0),
+    type:req.headers["content-type"] || "application/octet-stream",
+    url:blob.url,
+    uploadedAt:Date.now(),
+    storage:"vercel-blob",
+  };
+};
+
+const saveUpload = (req, originalName) => {
+  if(useVercelBlob) return saveBlobUpload(req, originalName);
+  return saveLocalUpload(req, originalName);
+};
+
 const api = async (req, res) => {
   const url = parsePath(req);
 
@@ -156,7 +238,7 @@ const api = async (req, res) => {
 
   if(url.pathname === "/api/login" && req.method === "POST") {
     const { id, password } = await readJSON(req);
-    const state = readStateRaw();
+    const state = await readStateRaw();
     const user = state?.users?.find((u) => u.id === String(id || "").trim());
     if(!user || !verifyPassword(user, password || "")) {
       send(res, 401, JSON.stringify({ ok:false, error:"账号或密码错误" }));
@@ -167,41 +249,13 @@ const api = async (req, res) => {
   }
 
   if(url.pathname === "/api/register" && req.method === "POST") {
-    const body = await readJSON(req);
-    const id = String(body.id || "").trim();
-    const name = String(body.name || "").trim();
-    const password = String(body.password || "");
-    const role = body.role === "teacher" ? "teacher" : "student";
-    if(!/^[A-Za-z0-9_-]{3,32}$/.test(id)) {
-      send(res, 400, JSON.stringify({ ok:false, error:"账号需为 3-32 位字母、数字、下划线或短横线" }));
-      return true;
-    }
-    if(!name || password.length < 6) {
-      send(res, 400, JSON.stringify({ ok:false, error:"请填写姓名，密码至少 6 位" }));
-      return true;
-    }
-    const state = readStateRaw() || { users:[], exams:[], courses:[], liveSessions:[], submissions:[], grades:[], messages:[] };
-    if((state.users || []).some((u) => u.id === id)) {
-      send(res, 409, JSON.stringify({ ok:false, error:"账号已存在" }));
-      return true;
-    }
-    const credentials = hashPassword(password);
-    const user = {
-      id, name, role, firstLogin:false,
-      className: role === "student" ? String(body.className || "") : undefined,
-      subject: role === "teacher" ? String(body.subject || "") : undefined,
-      createdAt: Date.now(),
-      ...credentials,
-    };
-    state.users = [...(state.users || []), user];
-    writeStateRaw(state);
-    send(res, 201, JSON.stringify({ ok:true, user:publicUser(user), state:publicState(state) }));
+    send(res, 403, JSON.stringify({ ok:false, error:"公开注册已关闭，请联系管理员创建账号" }));
     return true;
   }
 
   if(url.pathname === "/api/change-password" && req.method === "POST") {
     const { userId, oldPassword, newPassword } = await readJSON(req);
-    const state = readStateRaw();
+    const state = await readStateRaw();
     const user = state?.users?.find((u) => u.id === userId);
     if(!user || !verifyPassword(user, oldPassword || "")) {
       send(res, 401, JSON.stringify({ ok:false, error:"当前密码不正确" }));
@@ -214,7 +268,7 @@ const api = async (req, res) => {
     Object.assign(user, hashPassword(newPassword));
     delete user.password;
     user.firstLogin = false;
-    writeStateRaw(state);
+    await writeStateRaw(state);
     send(res, 200, JSON.stringify({ ok:true, user:publicUser(user), state:publicState(state) }));
     return true;
   }
@@ -228,20 +282,20 @@ const api = async (req, res) => {
   if(url.pathname !== "/api/state") return false;
 
   if(req.method === "GET") {
-    const state = readStateRaw();
+    const state = await readStateRaw();
     if(!state) {
       send(res, 200, "{}");
       return true;
     }
-    writeStateRaw(normalizeIncomingState(state));
-    send(res, 200, JSON.stringify(publicState(readStateRaw())));
+    await writeStateRaw(await normalizeIncomingState(state));
+    send(res, 200, JSON.stringify(publicState(await readStateRaw())));
     return true;
   }
 
   if(req.method === "PUT") {
     try {
       const parsed = await readJSON(req);
-      writeStateRaw(normalizeIncomingState(parsed));
+      await writeStateRaw(await normalizeIncomingState(parsed));
       send(res, 200, JSON.stringify({ ok:true, savedAt:Date.now() }));
     } catch (err) {
       send(res, 400, JSON.stringify({ ok:false, error:err.message }));

@@ -4,12 +4,13 @@
 
 当前版本支持：
 
-- 注册和登录
+- 管理员创建账号、用户登录
 - 后端密码加密校验
 - 课程、考试、课表、成绩、消息等动态数据
-- 教师上传课程视频、PDF、试卷
+- 教师上传课程视频、PDF、试卷，上传时显示进度
 - 学生上传答卷文件
-- 视频在线播放和文件下载
+- 视频在线播放、倍速、静音、画中画和文件下载
+- 管理员在后台修改登录页法律名言
 
 ## 本地启动
 
@@ -49,11 +50,18 @@ uploads/
 
 这些目录已加入 `.gitignore`，不要提交真实账号、密码哈希、视频、试卷或学生答卷。
 
-## Vercel 部署说明
+## 云数据库和云存储
 
-这个本地版本使用服务器磁盘保存 `data/` 和 `uploads/`。如果部署到 Vercel，建议迁移为：
+默认情况下，本地开发继续使用 `data/` 和 `uploads/`。
 
-- 结构化数据：Vercel Postgres、Neon 或 Supabase
-- 视频/PDF/答卷文件：Vercel Blob、S3、Cloudflare R2 或 Supabase Storage
+配置下面的环境变量后，后端会自动切到云服务：
 
-Vercel 的 Serverless 环境不会长期保留本地文件夹，因此不能直接依赖 `data/` 和 `uploads/` 作为生产存储。
+```text
+DATABASE_URL=postgres://...
+BLOB_READ_WRITE_TOKEN=vercel_blob_rw_...
+```
+
+- `DATABASE_URL`：账号、课程、考试、成绩等会保存到 Postgres 的 `faze_kv` 表。
+- `BLOB_READ_WRITE_TOKEN`：视频、PDF、试卷、答卷会保存到 Vercel Blob。
+
+说明：Vercel Blob 官方建议大文件在生产环境使用客户端直传；当前后端上传适合先跑通管理流程，后续可升级成客户端直传以支持更大的视频文件。

@@ -35,7 +35,7 @@ const Admin = ({ state, setState, toast, me, doLogout }) => {
         {view === "schedule" && <Schedule state={state} setState={setState} toast={toast} me={me} canManage={true} />}
         {view === "courses" && <Courses state={state} setState={setState} toast={toast} me={me} canManage={true} />}
         {view === "broadcast" && <AdminBroadcast state={state} setState={setState} toast={toast} />}
-        {view === "settings" && <AdminSettings state={state} toast={toast} />}
+        {view === "settings" && <AdminSettings state={state} setState={setState} toast={toast} />}
       </main>
 
       {showProfile && <ProfileModal me={me} state={state} setState={setState} toast={toast} onClose={()=>setShowProfile(false)} />}
@@ -101,7 +101,7 @@ const AdminDashboard = ({ state, setView }) => {
         <div className="card">
           <div className="card-head"><h3>快捷操作</h3></div>
           <div className="col">
-            <button className="btn ghost" onClick={() => setView("accounts")}>批量注册账号 →</button>
+            <button className="btn ghost" onClick={() => setView("accounts")}>批量导入账号 →</button>
             <button className="btn ghost" onClick={() => setView("exams")}>发布新考试 →</button>
             <button className="btn ghost" onClick={() => setView("courses")}>管理课程 →</button>
             <button className="btn ghost" onClick={() => setView("broadcast")}>发布站内公告 →</button>
@@ -191,7 +191,7 @@ const AdminAccounts = ({ state, setState, toast }) => {
         <div className="actions">
           <button className="btn ghost" onClick={downloadTemplate}>下载导入模板</button>
           <button className="btn ghost" onClick={() => setShowImport(true)}>批量导入</button>
-          <button className="btn" onClick={() => setShowManual(true)}>＋ 手动添加</button>
+          <button className="btn" onClick={() => setShowManual(true)}>＋ 管理员添加账号</button>
         </div>
       </div>
 
@@ -235,7 +235,16 @@ const AdminAccounts = ({ state, setState, toast }) => {
       {showImport && <ImportModal onClose={() => setShowImport(false)} onImport={onImport} toast={toast} />}
       {showManual && <ManualAddModal onClose={() => setShowManual(false)} onAdd={(u) => {
         if (state.users.find((x) => x.id === u.id)) {toast("账号已存在", "danger");return false;}
-        setState({ ...state, users: [...state.users, { ...u, password: u.id, firstLogin: true }] });
+        const clean = {
+          id:u.id.trim(),
+          name:u.name.trim(),
+          role:u.role,
+          password:u.id.trim(),
+          firstLogin:true,
+          className:u.role === "student" ? (u.className || "") : "",
+          subject:u.role === "teacher" ? (u.subject || "") : "",
+        };
+        setState({ ...state, users: [...state.users, clean] });
         toast("已添加", "ok");
         return true;
       }} />}
@@ -321,9 +330,9 @@ const ImportModal = ({ onClose, onImport, toast }) => {
 };
 
 const ManualAddModal = ({ onClose, onAdd }) => {
-  const [u, setU] = React.useState({ id: "", name: "", role: "student", className: "" });
+  const [u, setU] = React.useState({ id: "", name: "", role: "student", className: "", subject:"" });
   return (
-    <Modal onClose={onClose} title="手动添加账号"
+    <Modal onClose={onClose} title="管理员添加账号"
     foot={<>
         <button className="btn ghost" onClick={onClose}>取消</button>
         <button className="btn" disabled={!u.id || !u.name} onClick={() => {if (onAdd(u)) onClose();}}>添加</button>
@@ -338,10 +347,15 @@ const ManualAddModal = ({ onClose, onAdd }) => {
             <option value="student">学生</option>
             <option value="teacher">教师</option>
           </select></div>
-        <div className="field"><label>班级（学生选填）</label>
-          <input className="input" value={u.className} onChange={(e) => setU({ ...u, className: e.target.value })} /></div>
+        {u.role === "student" ? (
+          <div className="field"><label>班级（学生选填）</label>
+            <input className="input" value={u.className} onChange={(e) => setU({ ...u, className: e.target.value })} /></div>
+        ) : (
+          <div className="field"><label>学科（教师必填）</label>
+            <input className="input" value={u.subject} onChange={(e) => setU({ ...u, subject: e.target.value })} placeholder="如 民法、刑法" /></div>
+        )}
       </div>
-      <div className="muted tiny">初始密码＝账号，首次登录会强制修改。</div>
+      <div className="muted tiny">公开注册已关闭。学生和教师账号均只能由管理员创建；教师账号创建后才有上传课程和发布考试权限。</div>
     </Modal>);
 
 };
@@ -502,7 +516,16 @@ const AdminBroadcast = ({ state, setState, toast }) => {
 
 };
 
-const AdminSettings = ({ state, toast }) => {
+const AdminSettings = ({ state, setState, toast }) => {
+  const [quote, setQuote] = React.useState(state.settings?.loginQuote || "法不阿贵，绳不挠曲。");
+  const [source, setSource] = React.useState(state.settings?.loginQuoteSource || "《韩非子》");
+  const saveQuote = () => {
+    setState({
+      ...state,
+      settings:{ ...(state.settings || {}), loginQuote:quote.trim(), loginQuoteSource:source.trim() },
+    });
+    toast("登录页名言已更新", "ok");
+  };
   return (
     <div>
       <div className="page-head">
@@ -513,8 +536,9 @@ const AdminSettings = ({ state, toast }) => {
       </div>
       <div className="card">
         <h3 className="mb-16">数据 · 联网</h3>
-        <div className="kv mb-8"><span className="k">运行模式</span><span className="v">本地模式（数据保存在浏览器）</span></div>
-        <div className="kv mb-8"><span className="k">服务端地址</span><span className="v mono muted">尚未配置 · 将在后续接入云端时启用</span></div>
+        <div className="kv mb-8"><span className="k">运行模式</span><span className="v">动态后端模式</span></div>
+        <div className="kv mb-8"><span className="k">云数据库</span><span className="v mono muted">配置 DATABASE_URL 后启用 Postgres</span></div>
+        <div className="kv mb-8"><span className="k">云存储</span><span className="v mono muted">配置 BLOB_READ_WRITE_TOKEN 后启用 Vercel Blob</span></div>
         <div className="kv mb-16"><span className="k">数据条目</span><span className="v mono">{state.users.length} 用户 · {state.exams.length} 考试 · {state.submissions.length} 提交 · {state.grades.length} 批改</span></div>
         <div className="row gap-8">
           <button className="btn danger" onClick={() => {
@@ -522,6 +546,20 @@ const AdminSettings = ({ state, toast }) => {
             resetState();
             location.reload();
           }}>重置为示例数据</button>
+        </div>
+      </div>
+      <div className="card mt-16">
+        <h3 className="mb-16">登录页法律名言</h3>
+        <div className="field"><label>名言</label>
+          <textarea className="textarea" style={{minHeight:88}} value={quote} onChange={(e)=>setQuote(e.target.value)} /></div>
+        <div className="field"><label>出处 / 作者</label>
+          <input className="input" value={source} onChange={(e)=>setSource(e.target.value)} placeholder="如 《韩非子》" /></div>
+        <div className="row gap-8">
+          <button className="btn" disabled={!quote.trim()} onClick={saveQuote}>保存名言</button>
+          <button className="btn ghost" onClick={()=>{
+            setQuote("徒善不足以为政，徒法不能以自行。");
+            setSource("《孟子》");
+          }}>换一条示例</button>
         </div>
       </div>
     </div>);
