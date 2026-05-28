@@ -315,6 +315,62 @@ a:hover{color:var(--accent)}
   border-radius:var(--r-md); padding:16px; font-size:13px;
   white-space:pre-wrap; line-height:1.7;
 }
+.exam-prep-card{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:16px;
+  background:var(--accent-tint);
+}
+.exam-alert{
+  font-size:13px;
+  line-height:1.7;
+}
+.exam-alert.warn{
+  background:var(--warn-tint);
+  color:var(--warn);
+  border-color:transparent;
+}
+.exam-alert.danger{
+  background:var(--danger-tint);
+  color:var(--danger);
+  border-color:transparent;
+}
+.rich-editor{
+  border:1px solid var(--ink-200);
+  border-radius:var(--r-md);
+  background:#fff;
+  overflow:hidden;
+}
+.rich-editor.disabled{
+  opacity:.72;
+  background:var(--ink-50);
+}
+.rich-toolbar{
+  display:flex;
+  gap:6px;
+  padding:8px;
+  border-bottom:1px solid var(--ink-100);
+  background:var(--ink-50);
+}
+.rich-input{
+  min-height:140px;
+  padding:12px 14px;
+  outline:none;
+  line-height:1.8;
+}
+.rich-input:empty::before{
+  content:attr(data-placeholder);
+  color:var(--ink-400);
+}
+.rich-view{
+  border:1px solid var(--paper-line);
+  border-radius:var(--r-md);
+  padding:16px;
+  background:var(--paper-2);
+  line-height:1.8;
+}
+.rich-view p{margin:0 0 10px}
 
 /* file drop */
 .dropzone{

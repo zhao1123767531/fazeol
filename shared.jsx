@@ -229,6 +229,8 @@ const initialState = () => {
     })),
   ],
 
+  examAttempts: [],
+
   // 批改记录
   grades: (()=>{
     const seed = [];

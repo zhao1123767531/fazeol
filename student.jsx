@@ -162,15 +162,43 @@ const ExamList = ({state, me, onOpen})=>{
 };
 
 // ============ 测试详情（核心流程） ============
+const examFlow = (exam, attempt, sub, now=Date.now())=>{
+  const graceMs = 30 * 60 * 1000;
+  const prepMs = 5 * 60 * 1000;
+  const officialEnd = exam.endTime;
+  const graceEnd = officialEnd + graceMs;
+  if(sub) return { phase:"submitted", officialEnd, graceEnd, label:"已提交" };
+  if(now < exam.startTime) return { phase:"pending", officialEnd, graceEnd, label:"未开始" };
+  if(!attempt && now > graceEnd) return { phase:"closed", officialEnd, graceEnd, label:"已截止" };
+  if(!attempt) return { phase:"ready", officialEnd, graceEnd, label:"可开始" };
+  const prepEndsAt = attempt.prepEndsAt || (attempt.startedAt + prepMs);
+  if(!attempt.timerStartedAt && now < prepEndsAt) return { phase:"prep", officialEnd, graceEnd, prepEndsAt, label:"打印/准备" };
+  if(now <= officialEnd) return { phase:"active", officialEnd, graceEnd, label:"答题中" };
+  if(now <= graceEnd) return { phase:"grace", officialEnd, graceEnd, label:"交卷宽限" };
+  return { phase:"late", officialEnd, graceEnd, label:"延迟交卷" };
+};
+
 const ExamDetail = ({state, setState, toast, me, examId, onBack})=>{
   const exam = state.exams.find(e=>e.id===examId);
   const now = useNow(1000);
   const st = examStatus(exam);
   const sub = state.submissions.find(s=>s.examId===examId && s.studentId===me.id);
+  const attempt = (state.examAttempts||[]).find(a=>a.examId===examId && a.studentId===me.id);
+  const flow = exam ? examFlow(exam, attempt, sub, now) : null;
   const grades = state.grades.filter(g=>g.examId===examId && g.studentId===me.id);
   const allGraded = sub && exam.questions.every(q => grades.find(g=>g.qid===q.id));
   const fileRef = React.useRef();
   const [inRealExam, setInRealExam] = React.useState(false);
+  const rangOfficialEnd = React.useRef(false);
+
+  React.useEffect(()=>{
+    if(!exam || sub) return;
+    if(now >= exam.endTime && !rangOfficialEnd.current){
+      rangOfficialEnd.current = true;
+      playBell("warn");
+      toast("考试设定时间已到，请在 30 分钟内完成交卷", "danger");
+    }
+  }, [now, examId, Boolean(sub)]);
 
   // 下载试卷
   const downloadPaper = ()=>{
@@ -196,21 +224,59 @@ const ExamDetail = ({state, setState, toast, me, examId, onBack})=>{
     }
     const next = {...state};
     next.submissions = next.submissions.filter(s=>!(s.examId===examId && s.studentId===me.id));
+    const submittedAt = Date.now();
+    const delayStatus = submittedAt > (exam.endTime + 30*60*1000)
+      ? "late"
+      : submittedAt > exam.endTime ? "grace" : "on_time";
     next.submissions.push({
-      examId, studentId:me.id, answers, submittedAt: Date.now(),
+      examId, studentId:me.id, answers, submittedAt,
+      attemptStartedAt: attempt?.startedAt || null,
+      timerStartedAt: attempt?.timerStartedAt || null,
+      officialEndTime: exam.endTime,
+      graceEndTime: exam.endTime + 30*60*1000,
+      delayStatus,
     });
     setState(next);
-    toast("答卷已按题提交，等待教师批阅", "ok");
+    toast(delayStatus==="late" ? "答卷已提交，已标记为延迟交卷" : "答卷已按题提交，等待教师批阅", delayStatus==="late" ? "danger" : "ok");
     return true;
   };
 
   if(!exam) return <Empty title="考试不存在" />;
+
+  const beginAttempt = ()=>{
+    if(now < exam.startTime){ toast("尚未到开考时间", "danger"); return; }
+    const nextAttempt = {
+      examId, studentId:me.id,
+      startedAt:Date.now(),
+      prepEndsAt:Date.now() + 5*60*1000,
+      timerStartedAt:null,
+    };
+    setState({
+      ...state,
+      examAttempts:[...(state.examAttempts||[]).filter(a=>!(a.examId===examId && a.studentId===me.id)), nextAttempt],
+    });
+    playBell("open");
+    toast("已进入考试，开始 5 分钟打印/准备时间", "ok");
+  };
+
+  const beginTimer = ()=>{
+    if(!attempt) return;
+    setState({
+      ...state,
+      examAttempts:(state.examAttempts||[]).map(a=>a.examId===examId && a.studentId===me.id ? {...a, timerStartedAt:Date.now()} : a),
+    });
+    toast("正式计时已开始", "ok");
+  };
 
   // 真·全屏考场：渲染独立的 overlay
   if(inRealExam && exam.realMode){
     return (
       <RealModeExam
         exam={exam} me={me} sub={sub}
+        attempt={attempt}
+        flow={flow}
+        onBeginAttempt={beginAttempt}
+        onBeginTimer={beginTimer}
         onSubmit={submitAnswers}
         onDownloadPaper={downloadPaper}
         onExit={()=>{ exitFullscreen(); setInRealExam(false); }}
@@ -237,7 +303,7 @@ const ExamDetail = ({state, setState, toast, me, examId, onBack})=>{
         </div>
         <div className="row gap-8">
           {exam.realMode && <Tag kind="accent">全真模拟</Tag>}
-          <Tag kind={statusTagClass(st)}>{statusLabel(st)}</Tag>
+          <Tag kind={flow.phase==="late" ? "danger" : flow.phase==="grace" ? "warn" : flow.phase==="active" ? "ok" : statusTagClass(st)}>{flow.label}</Tag>
         </div>
       </div>
 
@@ -247,9 +313,12 @@ const ExamDetail = ({state, setState, toast, me, examId, onBack})=>{
         <div className="notice-box">{exam.notice || "（教师未填写须知）"}</div>
         <div className="grid cols-3 mt-16">
           <div className="kv"><span className="k">开始时间</span><span className="v mono">{fmtTime(exam.startTime)}</span></div>
-          <div className="kv"><span className="k">截止时间</span><span className="v mono">{fmtTime(exam.endTime)}</span></div>
+          <div className="kv"><span className="k">设定交卷</span><span className="v mono">{fmtTime(exam.endTime)}</span></div>
           <div className="kv"><span className="k">{exam.realMode?"考试时长":"题目数量"}</span>
             <span className="v mono">{exam.realMode ? `${exam.duration||120} 分钟` : `${exam.questions.length} 题`}</span></div>
+        </div>
+        <div className="notice-box mt-16">
+          考生需在开始时间后点击“开始答题”方可查看试卷。开始后有 5 分钟打印/准备时间，也可直接开始正式计时。设定交卷时间到后系统提醒，30 分钟宽限期后提交将标记为“延迟交卷”。
         </div>
       </div>
 
@@ -261,7 +330,7 @@ const ExamDetail = ({state, setState, toast, me, examId, onBack})=>{
               <div className="tiny" style={{color:"var(--accent-soft)", letterSpacing:".3em"}}>FULL EXAM SIMULATION</div>
               <h2 style={{color:"#fff", marginTop:8, fontSize:24}}>全真模拟考场</h2>
               <div style={{color:"rgba(231,225,210,.7)", marginTop:8, lineHeight:1.7, maxWidth:480}}>
-                进入考场后将全屏显示模拟时钟与倒计时，到点打铃，按真实考试时间作答。请确保提交答卷前不要中途离场。
+                到达开考时间后点击进入考场，再点击开始答题。考场内会先进入 5 分钟打印/准备阶段，可直接开始正式计时。
               </div>
               {st==="pending" && (
                 <div className="mt-16">
@@ -276,8 +345,8 @@ const ExamDetail = ({state, setState, toast, me, examId, onBack})=>{
               <AnalogClock size={140} dark />
               <button className="btn lg mt-16"
                 style={{background:"var(--accent)", border:"none", width:"100%"}}
-                disabled={st!=="open"} onClick={enterRealExam}>
-                {st==="pending" ? "尚未开考" : "进入考场 →"}
+                disabled={now < exam.startTime || flow.phase === "closed"} onClick={enterRealExam}>
+                {st==="pending" ? "尚未开考" : flow.phase === "closed" ? "已截止" : "进入考场 →"}
               </button>
             </div>
           </div>
@@ -285,7 +354,7 @@ const ExamDetail = ({state, setState, toast, me, examId, onBack})=>{
       )}
 
       {/* 状态分支 —— 普通模式或全真模拟已提交后 */}
-      {!exam.realMode && st === "pending" && (
+      {!exam.realMode && flow.phase === "pending" && (
         <div className="card center" style={{padding:"56px 24px"}}>
           <div className="muted tiny mb-8" style={{letterSpacing:".3em"}}>距离开始还有</div>
           <Countdown to={exam.startTime} />
@@ -294,14 +363,40 @@ const ExamDetail = ({state, setState, toast, me, examId, onBack})=>{
         </div>
       )}
 
-      {!exam.realMode && st !== "pending" && (
+      {!exam.realMode && flow.phase === "ready" && (
+        <div className="card center" style={{padding:"48px 24px"}}>
+          <h3 className="mb-8">可以开始答题</h3>
+          <div className="muted mb-16">点击后将显示试卷下载与提交区域，并进入 5 分钟打印/准备时间。</div>
+          <button className="btn lg" onClick={beginAttempt}>开始答题</button>
+        </div>
+      )}
+
+      {!exam.realMode && ["prep","active","grace","late"].includes(flow.phase) && (
         <>
-          {/* 试卷下载 */}
+          {flow.phase === "prep" && (
+            <div className="card mb-16 exam-prep-card">
+              <div>
+                <h3>打印 / 准备时间</h3>
+                <div className="muted tiny mt-8">剩余 <Countdown to={flow.prepEndsAt} />。准备完成可直接开始正式计时。</div>
+              </div>
+              <button className="btn" onClick={beginTimer}>直接开始计时</button>
+            </div>
+          )}
+          {flow.phase === "grace" && (
+            <div className="card mb-16 exam-alert warn">
+              设定交卷时间已到。请在宽限期内提交，宽限结束：{fmtTime(flow.graceEnd)}。
+            </div>
+          )}
+          {flow.phase === "late" && (
+            <div className="card mb-16 exam-alert danger">
+              已超过 30 分钟宽限期，继续提交将标记为“延迟交卷”。
+            </div>
+          )}
           <div className="card mb-16">
             <div className="row between">
               <div>
-                <h3>试卷下载</h3>
-                <div className="muted tiny mt-8">考试已开始 · 请尽快下载试卷</div>
+                <h3>试卷下载 / 查看</h3>
+                <div className="muted tiny mt-8">开始答题后方可查看试卷</div>
               </div>
               <button className="btn" onClick={downloadPaper}>
                 ↓ 下载 {exam.paperFile?.name || "试卷"}
@@ -319,11 +414,14 @@ const ExamDetail = ({state, setState, toast, me, examId, onBack})=>{
       )}
 
       {/* 上传答卷 / 已提交状态 —— 普通模式（按题分别上传） */}
-      {st === "open" && !exam.realMode && (
+      {["prep","active","grace","late"].includes(flow.phase) && !exam.realMode && (
         <div className="card mb-16">
           <div className="row between mb-16">
             <h3>按题提交答卷</h3>
-            <div className="muted tiny">截止 {fmtTime(exam.endTime)}（剩余 <Countdown to={exam.endTime} />）</div>
+            <div className="muted tiny">
+              {now <= exam.endTime ? <>设定交卷 {fmtTime(exam.endTime)}（剩余 <Countdown to={exam.endTime} />）</> :
+                <>宽限结束 {fmtTime(flow.graceEnd)}{flow.phase==="grace" && <>（剩余 <Countdown to={flow.graceEnd} />）</>}</>}
+            </div>
           </div>
 
           {!sub ? (
@@ -339,7 +437,7 @@ const ExamDetail = ({state, setState, toast, me, examId, onBack})=>{
       )}
 
       {/* 全真模拟·已提交（仅显示精简确认信息） */}
-      {exam.realMode && sub && st !== "closed" && (
+      {exam.realMode && sub && (
         <div className="card mb-16">
           <div className="row gap-8 mb-8"><Tag kind="ok">已提交</Tag>
             <span className="muted tiny">{fmtTime(sub.submittedAt)}</span></div>
@@ -350,13 +448,15 @@ const ExamDetail = ({state, setState, toast, me, examId, onBack})=>{
       )}
 
       {/* 已截止 —— 两种模式共用 */}
-      {st === "closed" && (
+      {(flow.phase === "submitted" || flow.phase === "closed") && !exam.realMode && (
         <div className="card mb-16">
           <h3>本场已截止</h3>
           {sub ? (
             <>
               <div className="row gap-8 mt-8 mb-16">
-                <Tag kind="ok">已提交</Tag>
+                <Tag kind={sub.delayStatus==="late" ? "danger" : sub.delayStatus==="grace" ? "warn" : "ok"}>
+                  {sub.delayStatus==="late" ? "延迟交卷" : sub.delayStatus==="grace" ? "宽限期提交" : "已提交"}
+                </Tag>
                 <span className="muted tiny">{fmtTime(sub.submittedAt)}</span>
               </div>
               {allGraded ? (
@@ -370,9 +470,28 @@ const ExamDetail = ({state, setState, toast, me, examId, onBack})=>{
           )}
         </div>
       )}
+
+      {flow.phase === "submitted" && exam.answerKey && (
+        <ExamAnswerKey exam={exam} />
+      )}
     </div>
   );
 };
+
+const ExamAnswerKey = ({exam})=>(
+  <div className="card mb-16">
+    <h3 className="mb-16">答案及解析</h3>
+    {exam.answerKey.content && <div className="rich-view" dangerouslySetInnerHTML={{__html: exam.answerKey.content}} />}
+    {exam.answerKey.file && (
+      <div className="file-row mt-16">
+        <span style={{color:"var(--accent)"}}>◧</span>
+        <span className="name">{exam.answerKey.file.name}</span>
+        <span className="size">{fmtBytes(exam.answerKey.file.size)}</span>
+        {exam.answerKey.file.url && <a className="btn subtle sm" href={exam.answerKey.file.url} download={exam.answerKey.file.name}>下载解析文件</a>}
+      </div>
+    )}
+  </div>
+);
 
 const ExamMyScore = ({exam, grades})=>{
   const total = grades.reduce((s,g)=>s+g.score, 0);
@@ -746,15 +865,15 @@ const SubmittedView = ({exam, sub, onWithdraw, compact})=>{
 };
 
 // ============ 全真模拟·全屏考场 ============
-const RealModeExam = ({exam, me, sub, onSubmit, onDownloadPaper, onExit, toast})=>{
+const RealModeExam = ({exam, me, sub, attempt, flow, onBeginAttempt, onBeginTimer, onSubmit, onDownloadPaper, onExit, toast})=>{
   const now = useNow(1000);
   const [downloaded, setDownloaded] = React.useState(false);
   const [showSubmit, setShowSubmit] = React.useState(false);
 
-  // 实际可用时间 = min(endTime, 进入时间 + duration*60s)
-  // 这里采用 exam.endTime 作为统一截止线
-  const remaining = Math.max(0, exam.endTime - now);
-  const totalMs = (exam.duration || 120) * 60 * 1000;
+  const localFlow = examFlow(exam, attempt, sub, now);
+  const targetTime = localFlow.phase === "prep" ? localFlow.prepEndsAt
+    : now <= exam.endTime ? exam.endTime : localFlow.graceEnd;
+  const remaining = Math.max(0, targetTime - now);
   // 标志位
   const expired = remaining <= 0;
   const lessThan10 = remaining > 0 && remaining <= 10*60*1000;
@@ -768,7 +887,7 @@ const RealModeExam = ({exam, me, sub, onSubmit, onDownloadPaper, onExit, toast})
       rang10.current = true;
       playBell("warn");
     }
-    if(expired && !rangEnd.current){
+    if(now >= exam.endTime && !rangEnd.current){
       rangEnd.current = true;
       playBell("end");
     }
@@ -816,7 +935,7 @@ const RealModeExam = ({exam, me, sub, onSubmit, onDownloadPaper, onExit, toast})
     onExit();
   };
 
-  const countClass = lessThan1 ? "danger" : lessThan10 ? "warn" : "";
+  const countClass = localFlow.phase === "late" || lessThan1 ? "danger" : localFlow.phase === "grace" || lessThan10 ? "warn" : "";
 
   return (
     <div className="real-exam">
@@ -841,8 +960,17 @@ const RealModeExam = ({exam, me, sub, onSubmit, onDownloadPaper, onExit, toast})
             {lessThan1 && !expired && (
               <div className="re-count-label" style={{color:"#e8867a", marginTop:8}}>最后一分钟</div>
             )}
-            {expired && (
-              <div className="re-count-label" style={{color:"#e8867a", marginTop:8}}>考试时间已结束</div>
+            {localFlow.phase === "ready" && (
+              <div className="re-count-label" style={{color:"var(--accent-soft)", marginTop:8}}>等待开始答题</div>
+            )}
+            {localFlow.phase === "prep" && (
+              <div className="re-count-label" style={{color:"var(--accent-soft)", marginTop:8}}>打印 / 准备时间</div>
+            )}
+            {localFlow.phase === "grace" && (
+              <div className="re-count-label" style={{color:"#e8867a", marginTop:8}}>交卷宽限期</div>
+            )}
+            {localFlow.phase === "late" && (
+              <div className="re-count-label" style={{color:"#e8867a", marginTop:8}}>延迟交卷</div>
             )}
           </div>
         </div>
@@ -855,8 +983,12 @@ const RealModeExam = ({exam, me, sub, onSubmit, onDownloadPaper, onExit, toast})
             <span className="v">{fmtTime(exam.startTime)}</span>
           </div>
           <div className="kv mb-8">
-            <span className="k" style={{width:80, display:"inline-block"}}>截止时间</span>
+            <span className="k" style={{width:80, display:"inline-block"}}>设定交卷</span>
             <span className="v">{fmtTime(exam.endTime)}</span>
+          </div>
+          <div className="kv mb-8">
+            <span className="k" style={{width:80, display:"inline-block"}}>宽限结束</span>
+            <span className="v">{fmtTime(localFlow.graceEnd)}</span>
           </div>
           <div className="kv mb-16">
             <span className="k" style={{width:80, display:"inline-block"}}>考生</span>
@@ -871,18 +1003,26 @@ const RealModeExam = ({exam, me, sub, onSubmit, onDownloadPaper, onExit, toast})
       </div>
 
       <div className="re-actions">
-        <div className="row gap-12">
-          <button className="re-btn ghost" onClick={handleDownload} disabled={expired&&!downloaded}>
-            ↓ {downloaded ? "再次下载试卷" : "下载试卷"}
-          </button>
-          {downloaded && <span style={{fontSize:12, color:"var(--accent-soft)"}}>✓ 已下载</span>}
-        </div>
+        {localFlow.phase === "ready" ? (
+          <div className="row gap-12">
+            <button className="re-btn" onClick={onBeginAttempt}>开始答题</button>
+            <span className="re-files">开始后显示试卷，并进入 5 分钟打印/准备时间。</span>
+          </div>
+        ) : (
+          <div className="row gap-12">
+            <button className="re-btn ghost" onClick={handleDownload} disabled={!attempt}>
+              ↓ {downloaded ? "再次下载试卷" : "下载试卷"}
+            </button>
+            {downloaded && <span style={{fontSize:12, color:"var(--accent-soft)"}}>✓ 已下载</span>}
+            {localFlow.phase === "prep" && <button className="re-btn" onClick={onBeginTimer}>直接开始计时</button>}
+          </div>
+        )}
         <div className="row gap-12">
           {!sub ? (
             <>
               <span className="re-files">点击右侧按钮按题上传作答（每题分别上传 · PDF / 图片）</span>
-              <button className="re-btn" onClick={()=>setShowSubmit(true)} disabled={expired}>
-                {expired ? "已超时" : "按题上传并提交 →"}
+              <button className="re-btn" onClick={()=>setShowSubmit(true)} disabled={!attempt}>
+                {localFlow.phase === "late" ? "延迟提交 →" : "按题上传并提交 →"}
               </button>
             </>
           ) : (

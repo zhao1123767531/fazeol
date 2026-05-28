@@ -177,6 +177,7 @@ const ExamEditor = ({ exam, state, me, onClose, onSave }) => {
   const [e, setE] = React.useState({ ...exam });
   const [uploadPct, setUploadPct] = React.useState(null);
   const fileRef = React.useRef();
+  const answerFileRef = React.useRef();
 
   const onFile = async (f) => {
     if (!f) return;
@@ -213,6 +214,19 @@ const ExamEditor = ({ exam, state, me, onClose, onSave }) => {
   };
 
   const teachers = state.users.filter((u) => u.role === "teacher");
+  const canPublishAnswer = examStatus(e) === "closed";
+  const onAnswerFile = async (f) => {
+    if (!f) return;
+    try {
+      setUploadPct(0);
+      const file = await uploadRemote(f, setUploadPct);
+      setE({ ...e, answerKey: { ...(e.answerKey || {}), file } });
+    } catch (err) {
+      alert(err.message || "上传失败");
+    } finally {
+      setUploadPct(null);
+    }
+  };
 
   return (
     <Modal wide onClose={onClose} title={exam._new ? "发布新考试" : "编辑考试"}
@@ -323,9 +337,61 @@ const ExamEditor = ({ exam, state, me, onClose, onSave }) => {
             </div>
           }
         </div>
+
+        <div className="field">
+          <label>答案及解析（考试结束后发布）</label>
+          {!canPublishAnswer && <div className="muted tiny mb-8">考试尚未结束。结束后可填写文字解析或上传解析文件，已提交学生可查看。</div>}
+          <RichTextEditor
+            disabled={!canPublishAnswer}
+            value={e.answerKey?.content || ""}
+            onChange={(html) => setE({ ...e, answerKey: { ...(e.answerKey || {}), content: html } })}
+          />
+          <div className="mt-12">
+            {e.answerKey?.file ? (
+              <div className="file-row">
+                <span style={{ color: "var(--accent)" }}>◧</span>
+                <span className="name">{e.answerKey.file.name}</span>
+                <span className="size">{fmtBytes(e.answerKey.file.size)}</span>
+                <button className="btn sm subtle" disabled={!canPublishAnswer} onClick={() => answerFileRef.current.click()}>替换解析文件</button>
+                <button className="btn sm danger" disabled={!canPublishAnswer} onClick={() => setE({ ...e, answerKey: { ...(e.answerKey || {}), file: null } })}>移除</button>
+              </div>
+            ) : (
+              <button className="btn subtle sm" disabled={!canPublishAnswer} onClick={() => answerFileRef.current.click()}>上传答案解析文件</button>
+            )}
+            <input ref={answerFileRef} type="file" accept=".pdf,.doc,.docx,image/*" style={{ display: "none" }} onChange={(ev) => onAnswerFile(ev.target.files[0])} />
+          </div>
+        </div>
       </div>
     </Modal>);
 
+};
+
+const RichTextEditor = ({ value, onChange, disabled }) => {
+  const ref = React.useRef();
+  React.useEffect(() => {
+    if (ref.current && ref.current.innerHTML !== (value || "")) ref.current.innerHTML = value || "";
+  }, [value]);
+  const exec = (cmd) => {
+    if (disabled) return;
+    ref.current?.focus();
+    document.execCommand(cmd, false, null);
+    onChange(ref.current.innerHTML);
+  };
+  return (
+    <div className={"rich-editor" + (disabled ? " disabled" : "")}>
+      <div className="rich-toolbar">
+        <button type="button" className="btn subtle sm" disabled={disabled} onClick={() => exec("bold")}>B</button>
+        <button type="button" className="btn subtle sm" disabled={disabled} onClick={() => exec("underline")}>U</button>
+        <button type="button" className="btn subtle sm" disabled={disabled} onClick={() => exec("insertUnorderedList")}>列表</button>
+      </div>
+      <div
+        ref={ref}
+        className="rich-input"
+        contentEditable={!disabled}
+        onInput={(ev) => onChange(ev.currentTarget.innerHTML)}
+        data-placeholder={disabled ? "考试结束后可填写答案及解析" : "可输入文字解析，支持加粗、下划线和列表"}
+      />
+    </div>);
 };
 
 // ============ 阅卷（按学生 · 整卷展示） ============
@@ -456,6 +522,8 @@ const GradingView = ({ state, setState, toast, me, examId, onBack }) => {
             <input type="checkbox" checked={hideName} onChange={(e) => setHideName(e.target.checked)} />
             匿名阅卷
           </label>
+          {cur?.delayStatus === "late" && <Tag kind="danger">延迟交卷</Tag>}
+          {cur?.delayStatus === "grace" && <Tag kind="warn">宽限期提交</Tag>}
           <Tag>{idx + 1} / {subs.length}</Tag>
         </div>
       </div>
@@ -511,6 +579,7 @@ const GradingView = ({ state, setState, toast, me, examId, onBack }) => {
                         <span style={{ color: "var(--accent)" }}>◧</span>
                         <span className="name">{f.name}</span>
                         <span className="size">{fmtBytes(f.size)}</span>
+                        {f.url && <a className="btn subtle sm" href={f.url} download={f.name}>下载</a>}
                       </div>
                   )}
                   </div>
