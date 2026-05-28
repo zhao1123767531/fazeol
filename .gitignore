@@ -1,0 +1,9 @@
+node_modules/
+.DS_Store
+
+# Runtime data. Do not commit real users, password hashes, uploaded videos, papers, or answer files.
+data/
+uploads/
+
+# Local archives
+*.zip
