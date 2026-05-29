@@ -20,6 +20,13 @@
 <!-- xlsx 解析（用于导入账号） -->
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 
+<!-- Vercel Blob 浏览器直传 SDK -->
+<script type="module">
+  import { upload } from "https://esm.sh/@vercel/blob@2.0.0/client?bundle";
+  window.fazeBlobUpload = upload;
+  window.dispatchEvent(new Event("faze-blob-ready"));
+</script>
+
 <!-- 应用脚本（顺序：先共享，再各端，最后主应用） -->
 <script type="text/babel" src="shared.jsx"></script>
 <script type="text/babel" src="courses.jsx"></script>

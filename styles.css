@@ -596,6 +596,7 @@ a:hover{color:var(--accent)}
   background:
     radial-gradient(circle at 80% 20%, rgba(255,255,255,.15), transparent 50%),
     repeating-linear-gradient(45deg, transparent 0 12px, rgba(255,255,255,.04) 12px 14px);
+  pointer-events:none;
 }
 .course-cover .subj-tag{
   background:rgba(255,255,255,.15); color:#fff;
@@ -618,7 +619,9 @@ a:hover{color:var(--accent)}
   content:""; position:absolute; inset:0;
   background:
     radial-gradient(circle at 90% 10%, rgba(255,255,255,.10), transparent 50%);
+  pointer-events:none;
 }
+.course-hero > *{position:relative; z-index:1}
 
 .lesson-row{
   display:flex; align-items:center; gap:12px;
@@ -694,6 +697,24 @@ a:hover{color:var(--accent)}
   padding:0 28px 0 10px;
   font-size:12px;
 }
+.check-grid{
+  display:flex;
+  flex-wrap:wrap;
+  gap:8px;
+}
+.check-pill{
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  border:1px solid var(--ink-200);
+  border-radius:var(--r-sm);
+  padding:6px 9px;
+  background:#fff;
+  color:var(--ink-700);
+  font-size:12px;
+  cursor:pointer;
+}
+.check-pill input{accent-color:var(--accent)}
 .upload-progress{
   margin-top:10px;
   height:22px;

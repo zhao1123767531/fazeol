@@ -11,13 +11,23 @@ const subjectShort = (s)=> SUBJECT_SHORT[s] || String(s || "课程").slice(0,2);
 
 const KIND_LABEL = { video:"视频", pdf:"讲义", article:"图文" };
 const KIND_GLYPH = { video:"▶", pdf:"◧", article:"❖" };
+const normalizeClasses = (value)=> Array.isArray(value) ? value.filter(Boolean) : (value ? [value] : []);
+const hasClassAccess = (classNames, me)=> {
+  const list = normalizeClasses(classNames);
+  return me.role !== "student" || list.length === 0 || list.includes(me.className);
+};
+const classLabel = (classNames)=> {
+  const list = normalizeClasses(classNames);
+  return list.length ? list.join("、") : "全部班级";
+};
 
 const Courses = ({state, setState, toast, me, canManage})=>{
   const [subj, setSubj] = React.useState("全部");
   const [openId, setOpenId] = React.useState(null);
   const [editing, setEditing] = React.useState(null);
 
-  const courses = (state.courses||[]).filter(c=> subj==="全部" ? true : c.subject===subj);
+  const courseVisibleToMe = (c)=> canManage || hasClassAccess(c.classNames, me) || (c.lessons || []).some(l=>hasClassAccess(l.classNames?.length ? l.classNames : c.classNames, me));
+  const courses = (state.courses||[]).filter(c=> (subj==="全部" ? true : c.subject===subj) && courseVisibleToMe(c));
   const open = (state.courses||[]).find(c=>c.id===openId);
 
   const saveCourse = (c)=>{
@@ -27,7 +37,8 @@ const Courses = ({state, setState, toast, me, canManage})=>{
     else {
       const clean = {...c, createdAt: Date.now()};
       next.courses.unshift(clean);
-      const targets = (state.users || []).filter(u=>u.role==="student");
+      const targetClasses = normalizeClasses(clean.classNames);
+      const targets = (state.users || []).filter(u=>u.role==="student" && (targetClasses.length === 0 || targetClasses.includes(u.className)));
       next.messages = [
         ...targets.map(u=>makeMessage(u.id, "新课程上线", `新课程《${clean.title}》已上线。\n学科：${clean.subject || "未设置"}\n主讲：${clean.instructor || "未设置"}\n请前往「课程学习」查看。`, "course")),
         ...(next.messages || []),
@@ -51,13 +62,18 @@ const Courses = ({state, setState, toast, me, canManage})=>{
 
   if(open){
     return (
-      <CourseDetail
-        course={open} state={state} setState={setState} toast={toast} me={me}
-        canManage={canManage}
-        onBack={()=>setOpenId(null)}
-        onEdit={()=>setEditing(open)}
-        onRemove={()=>removeCourse(open.id)}
-      />
+      <>
+        <CourseDetail
+          course={open} state={state} setState={setState} toast={toast} me={me}
+          canManage={canManage}
+          onBack={()=>setOpenId(null)}
+          onEdit={()=>setEditing(open)}
+          onRemove={()=>removeCourse(open.id)}
+        />
+        {editing && (
+          <CourseEditor course={editing} state={state} onClose={()=>setEditing(null)} onSave={saveCourse} />
+        )}
+      </>
     );
   }
 
@@ -73,7 +89,7 @@ const Courses = ({state, setState, toast, me, canManage})=>{
             <button className="btn" onClick={()=>setEditing({
               id: uid("C"), subject: SUBJECTS[0], title:"", description:"",
               instructor: me.name, instructorId: me.id,
-              cover:"#3b4d6f", lessons:[], _new:true,
+              cover:"#3b4d6f", lessons:[], classNames:[], _new:true,
             })}>＋ 新建课程</button>
           </div>
         )}
@@ -114,7 +130,7 @@ const Courses = ({state, setState, toast, me, canManage})=>{
       )}
 
       {editing && (
-        <CourseEditor course={editing} onClose={()=>setEditing(null)} onSave={saveCourse} />
+        <CourseEditor course={editing} state={state} onClose={()=>setEditing(null)} onSave={saveCourse} />
       )}
     </div>
   );
@@ -122,8 +138,15 @@ const Courses = ({state, setState, toast, me, canManage})=>{
 
 // ============ 课程详情 ============
 const CourseDetail = ({course, state, setState, toast, me, canManage, onBack, onEdit, onRemove})=>{
-  const [openLesson, setOpenLesson] = React.useState(course.lessons[0]?.id);
-  const lesson = course.lessons.find(l=>l.id===openLesson);
+  const visibleLessons = canManage
+    ? (course.lessons || [])
+    : (course.lessons || []).filter(l=>hasClassAccess(normalizeClasses(l.classNames).length ? l.classNames : course.classNames, me));
+  const [openLesson, setOpenLesson] = React.useState(visibleLessons[0]?.id);
+  React.useEffect(()=>{
+    if(openLesson && visibleLessons.some(l=>l.id===openLesson)) return;
+    setOpenLesson(visibleLessons[0]?.id);
+  }, [course.id, visibleLessons.map(l=>l.id).join(","), openLesson]);
+  const lesson = visibleLessons.find(l=>l.id===openLesson);
 
   // 学习进度（仅学生有意义；存于 state.progress）
   const progress = state.progress || {};
@@ -136,14 +159,14 @@ const CourseDetail = ({course, state, setState, toast, me, canManage, onBack, on
     setState({...state, progress: np});
   };
 
-  const completed = myProg.completed.length;
-  const total = course.lessons.length;
+  const completed = myProg.completed.filter(id=>visibleLessons.some(l=>l.id===id)).length;
+  const total = visibleLessons.length;
 
   const addLesson = ()=>{
     const idx = course.lessons.length + 1;
     const newL = {
       id: uid("L"), title:`第${idx}讲`, kind:"video", duration:"",
-      file:null, content:"", createdAt: Date.now(), createdBy: me.id,
+      file:null, content:"", classNames: normalizeClasses(course.classNames), createdAt: Date.now(), createdBy: me.id,
     };
     const next = {...course, lessons:[...course.lessons, newL]};
     saveCourseInState(next);
@@ -194,8 +217,8 @@ const CourseDetail = ({course, state, setState, toast, me, canManage, onBack, on
           )}
           {canManage && (
             <div className="row gap-8">
-              <button className="btn subtle sm" onClick={onEdit}>编辑课程信息</button>
-              <button className="btn danger sm" onClick={onRemove}>删除课程</button>
+              <button className="btn subtle sm" onClick={(e)=>{e.stopPropagation(); onEdit();}}>编辑课程信息</button>
+              <button className="btn danger sm" onClick={(e)=>{e.stopPropagation(); onRemove();}}>删除课程</button>
             </div>
           )}
         </div>
@@ -208,9 +231,9 @@ const CourseDetail = ({course, state, setState, toast, me, canManage, onBack, on
             <h3 style={{fontSize:14}}>课时目录</h3>
             {canManage && <button className="btn subtle sm" onClick={addLesson}>＋ 新增</button>}
           </div>
-          {course.lessons.length===0 ? (
+          {visibleLessons.length===0 ? (
             <div className="empty"><div className="t">尚无课时</div></div>
-          ) : course.lessons.map((l, i)=>{
+          ) : visibleLessons.map((l, i)=>{
             const done = myProg.completed.includes(l.id);
             return (
               <div key={l.id}
@@ -223,6 +246,7 @@ const CourseDetail = ({course, state, setState, toast, me, canManage, onBack, on
                     <span className="glyph">{KIND_GLYPH[l.kind]}</span>
                     {KIND_LABEL[l.kind]}
                     {l.duration && <span style={{marginLeft:6}}>· {l.duration}</span>}
+                    {canManage && <span style={{marginLeft:6}}>· {classLabel(normalizeClasses(l.classNames).length ? l.classNames : course.classNames)}</span>}
                   </div>
                 </div>
                 {!canManage && done && <span className="tag ok" style={{fontSize:10}}>已学</span>}
@@ -258,6 +282,12 @@ const LessonView = ({lesson, course, canManage, isDone, onToggleDone, onUpdate, 
   const [draft, setDraft] = React.useState({...lesson});
   const [uploadPct, setUploadPct] = React.useState(null);
   const fileRef = React.useRef();
+  const classes = classOptions(state);
+  const toggleClass = (name)=>{
+    const set = new Set(normalizeClasses(draft.classNames));
+    set.has(name) ? set.delete(name) : set.add(name);
+    setDraft({...draft, classNames:[...set]});
+  };
 
   React.useEffect(()=>{ setDraft({...lesson}); setEdit(false); }, [lesson.id]);
 
@@ -299,6 +329,18 @@ const LessonView = ({lesson, course, canManage, isDone, onToggleDone, onUpdate, 
             </select></div>
           <div className="field"><label>时长 / 篇幅（选填）</label>
             <input className="input" value={draft.duration||""} onChange={e=>setDraft({...draft, duration:e.target.value})} placeholder="如 45:20、18 页、5 分钟" /></div>
+          <div className="field"><label>课时可见班级</label>
+            <div className="check-grid">
+              {classes.map(c=>(
+                <label key={c} className="check-pill">
+                  <input type="checkbox" checked={normalizeClasses(draft.classNames).includes(c)} onChange={()=>toggleClass(c)} />
+                  <span>{c}</span>
+                </label>
+              ))}
+              {classes.length===0 && <span className="muted tiny">暂无班级；不选择则全部班级可见</span>}
+            </div>
+            <div className="muted tiny mt-8">不选择则继承课程班级；这里可与课程班级不同。</div>
+          </div>
         </div>
 
         {draft.kind === "article" ? (
@@ -620,9 +662,15 @@ const LessonNotes = ({lessonId, courseId})=>{
 };
 
 // ============ 课程编辑（基本信息） ============
-const CourseEditor = ({course, onClose, onSave})=>{
+const CourseEditor = ({course, state, onClose, onSave})=>{
   const [c, setC] = React.useState({...course});
   const covers = ["#3b4d6f","#5a3a3a","#3a5a4a","#5a4a3a","#3a4a5a","#5a3a5a","#1a2538"];
+  const classes = classOptions(state);
+  const toggleClass = (name)=>{
+    const set = new Set(normalizeClasses(c.classNames));
+    set.has(name) ? set.delete(name) : set.add(name);
+    setC({...c, classNames:[...set]});
+  };
   return (
     <Modal wide onClose={onClose} title={course._new?"新建课程":"编辑课程信息"}
       foot={<>
@@ -641,6 +689,18 @@ const CourseEditor = ({course, onClose, onSave})=>{
           </select></div>
         <div className="field"><label>主讲教师</label>
           <input className="input" value={c.instructor} onChange={e=>setC({...c, instructor:e.target.value})} /></div>
+        <div className="field"><label>课程可见班级</label>
+          <div className="check-grid">
+            {classes.map(name=>(
+              <label key={name} className="check-pill">
+                <input type="checkbox" checked={normalizeClasses(c.classNames).includes(name)} onChange={()=>toggleClass(name)} />
+                <span>{name}</span>
+              </label>
+            ))}
+            {classes.length===0 && <span className="muted tiny">暂无班级；不选择则全部班级可见</span>}
+          </div>
+          <div className="muted tiny mt-8">课时可以单独设置不同班级。</div>
+        </div>
         <div className="field"><label>封面色</label>
           <div className="row gap-8">
             {covers.map(col=>(

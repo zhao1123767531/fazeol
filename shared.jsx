@@ -365,16 +365,25 @@ const toUploadFile = (file, blob)=>({
   uploadedAt:Date.now(),
   storage:"vercel-blob",
 });
-const importNative = (url) => new Function("url", "return import(url)")(url);
+const waitForBlobUpload = () => new Promise((resolve, reject)=>{
+  if(window.fazeBlobUpload) { resolve(window.fazeBlobUpload); return; }
+  const timer = setTimeout(()=>reject(new Error("上传组件加载超时，请刷新页面后重试")), 12000);
+  window.addEventListener("faze-blob-ready", ()=>{
+    clearTimeout(timer);
+    resolve(window.fazeBlobUpload);
+  }, {once:true});
+});
 const uploadBlobDirect = async (file, onProgress) => {
-  const { upload } = await importNative("https://esm.sh/@vercel/blob@2.0.0/client?bundle");
+  if(onProgress) onProgress(1);
+  const upload = await waitForBlobUpload();
+  if(onProgress) onProgress(3);
   const blob = await upload(`uploads/${Date.now()}-${file.name}`, file, {
     access:"public",
     handleUploadUrl:"/api/blob-upload",
     contentType:file.type || "application/octet-stream",
     multipart:file.size > 8 * 1024 * 1024,
     onUploadProgress:(evt)=>{
-      if(onProgress) onProgress(Math.round(evt.percentage || 0));
+      if(onProgress) onProgress(Math.max(3, Math.round(evt.percentage || 0)));
     },
   });
   if(onProgress) onProgress(100);
