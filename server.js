@@ -208,14 +208,22 @@ const saveBlobUpload = async (req, originalName) => {
   const { put } = await import("@vercel/blob");
   const safeName = safeUploadName(originalName);
   const pathname = `uploads/${Date.now()}-${crypto.randomBytes(6).toString("hex")}-${safeName}`;
-  const blob = await put(pathname, req, {
+  const chunks = [];
+  let size = 0;
+  for await (const chunk of req) {
+    chunks.push(chunk);
+    size += chunk.length;
+  }
+  const body = Buffer.concat(chunks);
+  const blob = await put(pathname, body, {
     access:"public",
     addRandomSuffix:false,
+    contentType:req.headers["content-type"] || "application/octet-stream",
   });
   return {
     name:safeName,
     storedName:blob.pathname || pathname,
-    size:Number(req.headers["content-length"] || 0),
+    size,
     type:req.headers["content-type"] || "application/octet-stream",
     url:blob.url,
     uploadedAt:Date.now(),

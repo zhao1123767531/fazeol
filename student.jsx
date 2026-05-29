@@ -165,13 +165,16 @@ const ExamList = ({state, me, onOpen})=>{
 const examFlow = (exam, attempt, sub, now=Date.now())=>{
   const graceMs = 30 * 60 * 1000;
   const prepMs = 5 * 60 * 1000;
-  const officialEnd = exam.endTime;
+  const prepEndsAt = attempt ? (attempt.prepEndsAt || (attempt.startedAt + prepMs)) : null;
+  const timerStart = attempt?.timerStartedAt || (attempt && now >= prepEndsAt ? prepEndsAt : null);
+  const officialEnd = exam.realMode && timerStart
+    ? timerStart + (exam.duration || 120) * 60 * 1000
+    : exam.endTime;
   const graceEnd = officialEnd + graceMs;
   if(sub) return { phase:"submitted", officialEnd, graceEnd, label:"已提交" };
   if(now < exam.startTime) return { phase:"pending", officialEnd, graceEnd, label:"未开始" };
   if(!attempt && now > graceEnd) return { phase:"closed", officialEnd, graceEnd, label:"已截止" };
   if(!attempt) return { phase:"ready", officialEnd, graceEnd, label:"可开始" };
-  const prepEndsAt = attempt.prepEndsAt || (attempt.startedAt + prepMs);
   if(!attempt.timerStartedAt && now < prepEndsAt) return { phase:"prep", officialEnd, graceEnd, prepEndsAt, label:"打印/准备" };
   if(now <= officialEnd) return { phase:"active", officialEnd, graceEnd, label:"答题中" };
   if(now <= graceEnd) return { phase:"grace", officialEnd, graceEnd, label:"交卷宽限" };
@@ -225,15 +228,16 @@ const ExamDetail = ({state, setState, toast, me, examId, onBack})=>{
     const next = {...state};
     next.submissions = next.submissions.filter(s=>!(s.examId===examId && s.studentId===me.id));
     const submittedAt = Date.now();
-    const delayStatus = submittedAt > (exam.endTime + 30*60*1000)
+    const submitFlow = examFlow(exam, attempt, null, submittedAt);
+    const delayStatus = submittedAt > submitFlow.graceEnd
       ? "late"
-      : submittedAt > exam.endTime ? "grace" : "on_time";
+      : submittedAt > submitFlow.officialEnd ? "grace" : "on_time";
     next.submissions.push({
       examId, studentId:me.id, answers, submittedAt,
       attemptStartedAt: attempt?.startedAt || null,
       timerStartedAt: attempt?.timerStartedAt || null,
-      officialEndTime: exam.endTime,
-      graceEndTime: exam.endTime + 30*60*1000,
+      officialEndTime: submitFlow.officialEnd,
+      graceEndTime: submitFlow.graceEnd,
       delayStatus,
     });
     setState(next);
@@ -872,7 +876,7 @@ const RealModeExam = ({exam, me, sub, attempt, flow, onBeginAttempt, onBeginTime
 
   const localFlow = examFlow(exam, attempt, sub, now);
   const targetTime = localFlow.phase === "prep" ? localFlow.prepEndsAt
-    : now <= exam.endTime ? exam.endTime : localFlow.graceEnd;
+    : now <= localFlow.officialEnd ? localFlow.officialEnd : localFlow.graceEnd;
   const remaining = Math.max(0, targetTime - now);
   // 标志位
   const expired = remaining <= 0;
@@ -887,7 +891,7 @@ const RealModeExam = ({exam, me, sub, attempt, flow, onBeginAttempt, onBeginTime
       rang10.current = true;
       playBell("warn");
     }
-    if(now >= exam.endTime && !rangEnd.current){
+    if(now >= localFlow.officialEnd && !rangEnd.current){
       rangEnd.current = true;
       playBell("end");
     }
@@ -983,8 +987,8 @@ const RealModeExam = ({exam, me, sub, attempt, flow, onBeginAttempt, onBeginTime
             <span className="v">{fmtTime(exam.startTime)}</span>
           </div>
           <div className="kv mb-8">
-            <span className="k" style={{width:80, display:"inline-block"}}>设定交卷</span>
-            <span className="v">{fmtTime(exam.endTime)}</span>
+            <span className="k" style={{width:80, display:"inline-block"}}>考试结束</span>
+            <span className="v">{attempt ? fmtTime(localFlow.officialEnd) : "开始计时后生成"}</span>
           </div>
           <div className="kv mb-8">
             <span className="k" style={{width:80, display:"inline-block"}}>宽限结束</span>

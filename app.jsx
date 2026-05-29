@@ -100,10 +100,17 @@ const Login = ({ users, state, setState, doLogin, toast }) => {
   const [id, setId] = React.useState("");
   const [pw, setPw] = React.useState("");
   const [busy, setBusy] = React.useState(false);
+  const [termsAgreed, setTermsAgreed] = React.useState(false);
+  const [termsModal, setTermsModal] = React.useState(false);
+  const [confirmTerms, setConfirmTerms] = React.useState(false);
   const quote = state.settings?.loginQuote || "法不阿贵，绳不挠曲。";
   const quoteSource = state.settings?.loginQuoteSource || "《韩非子》";
 
-  const submit = async () => {
+  const submit = async (forceTerms=false) => {
+    if(!termsAgreed && !forceTerms){
+      setConfirmTerms(true);
+      return;
+    }
     setBusy(true);
     try{
       const result = await loginRemote(id.trim(), pw);
@@ -117,8 +124,6 @@ const Login = ({ users, state, setState, doLogin, toast }) => {
       setBusy(false);
     }
   };
-
-  const fillDemo = (uid, pwd) => {setId(uid);setPw(pwd);};
 
   return (
     <div className="login-shell">
@@ -151,31 +156,52 @@ const Login = ({ users, state, setState, doLogin, toast }) => {
             onKeyDown={(e) => e.key === "Enter" && submit()} placeholder="请输入密码" />
           </div>
 
-          <button className="btn full lg" disabled={busy} onClick={submit}>
+          <button className="btn full lg" disabled={busy} onClick={()=>submit()}>
             {busy ? "处理中…" : "登 录"}
           </button>
 
           <div className="divider"></div>
-          <div className="muted tiny" style={{ letterSpacing: ".15em", marginBottom: 8 }}>演示账号（点击填入）</div>
-          <div className="col gap-4">
-            <button className="btn ghost sm" style={{ justifyContent: "flex-start" }} onClick={() => fillDemo("admin", "admin")}>
-              <span className="mono" style={{ minWidth: 90 }}>admin</span>
-              <span className="muted" style={{ marginLeft: 8 }}>系统管理员</span>
-            </button>
-            <button className="btn ghost sm" style={{ justifyContent: "flex-start" }} onClick={() => fillDemo("T001", "T001")}>
-              <span className="mono" style={{ minWidth: 90 }}>T001</span>
-              <span className="muted" style={{ marginLeft: 8 }}>陈砚清 · 教师（首次登录需改密）</span>
-            </button>
-            <button className="btn ghost sm" style={{ justifyContent: "flex-start" }} onClick={() => fillDemo("S2024001", "S2024001")}>
-              <span className="mono" style={{ minWidth: 90 }}>S2024001</span>
-              <span className="muted" style={{ marginLeft: 8 }}>周予安 · 学生（首次登录需改密）</span>
-            </button>
+          <div className="terms-line">
+            <label className="row gap-8" style={{cursor:"pointer"}}>
+              <input type="checkbox" checked={termsAgreed} onChange={(e)=>setTermsAgreed(e.target.checked)} />
+              <span>我已阅读并同意</span>
+            </label>
+            <button className="link-btn" onClick={()=>setTermsModal(true)}>用户条款</button>
           </div>
         </div>
       </div>
+      {termsModal && <TermsModal onClose={()=>setTermsModal(false)} />}
+      {confirmTerms && (
+        <Modal title="请确认用户条款" onClose={()=>setConfirmTerms(false)}
+          foot={<>
+            <button className="btn ghost" onClick={()=>setConfirmTerms(false)}>取消</button>
+            <button className="btn" onClick={()=>{setTermsAgreed(true); setConfirmTerms(false); submit(true);}}>同意并登录</button>
+          </>}>
+          <div className="notice-box">
+            登录前请确认您已阅读并同意「用户条款」。您可以先查看条款内容，也可以直接确认后继续登录。
+          </div>
+          <button className="link-btn mt-16" onClick={()=>setTermsModal(true)}>查看用户条款</button>
+        </Modal>
+      )}
     </div>);
 
 };
+
+const TermsModal = ({onClose}) => (
+  <Modal title="用户条款" onClose={onClose}>
+    <div className="terms-content">
+      <h4>法泽在线用户条款</h4>
+      <p>1. 平台账号由管理员统一创建，用户应妥善保管账号和密码，不得转借他人使用。</p>
+      <p>2. 用户上传的课程资料、试卷、答卷、解析等内容应符合法律法规和教学管理要求。</p>
+      <p>3. 考试期间应遵守考试规则，系统会记录开始答题、提交时间及延迟交卷等状态。</p>
+      <p>4. 平台仅用于教学、训练和考试管理场景。未经授权，不得复制、传播课程内容或他人答卷。</p>
+      <p>5. 继续登录即表示您已阅读、理解并同意遵守本条款。</p>
+    </div>
+    <div className="modal-foot">
+      <button className="btn" onClick={onClose}>我知道了</button>
+    </div>
+  </Modal>
+);
 
 // ============ 首次登录改密 ============
 const FirstLoginPwd = ({ me, onSubmit }) => {

@@ -115,6 +115,38 @@ a:hover{color:var(--accent)}
   font-size:12px; letter-spacing:.3em; color:var(--ink-500); text-transform:uppercase;
 }
 .login-card h2{margin:8px 0 28px}
+.terms-line{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:8px;
+  color:var(--ink-600);
+  font-size:12px;
+}
+.terms-line input{accent-color:var(--accent)}
+.link-btn{
+  border:0;
+  background:transparent;
+  color:var(--accent);
+  cursor:pointer;
+  font:inherit;
+  padding:0;
+  text-decoration:underline;
+  text-underline-offset:3px;
+}
+.link-btn:hover{color:#8a5921}
+.terms-content{
+  color:var(--ink-700);
+  font-size:13px;
+  line-height:1.85;
+}
+.terms-content h4{
+  color:var(--ink-900);
+  font-family:var(--serif);
+  font-size:16px;
+  margin:0 0 10px;
+}
+.terms-content p{margin:8px 0}
 
 /* ============ 通用 ============ */
 .field{display:flex; flex-direction:column; gap:6px; margin-bottom:14px}
@@ -572,7 +604,7 @@ a:hover{color:var(--accent)}
 }
 .course-cover .cover-mark{
   position:absolute; right:24px; top:16px;
-  font-family:var(--serif); font-size:72px;
+  font-family:var(--serif); font-size:60px;
   color:rgba(255,255,255,.18); line-height:1;
 }
 .course-body{padding:18px}

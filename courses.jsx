@@ -2,6 +2,12 @@
 /* 同时为学生（浏览）、教师/管理员（管理）提供入口 */
 
 const SUBJECTS = ["民法","刑法","法理学","宪法","行政法","民事诉讼","刑事诉讼","商法","经济法","国际法"];
+const SUBJECT_SHORT = {
+  "民法":"民法", "刑法":"刑法", "法理学":"法理", "宪法":"宪法",
+  "行政法":"行政", "民事诉讼":"民诉", "刑事诉讼":"刑诉",
+  "商法":"商法", "经济法":"经济", "国际法":"国际",
+};
+const subjectShort = (s)=> SUBJECT_SHORT[s] || String(s || "课程").slice(0,2);
 
 const KIND_LABEL = { video:"视频", pdf:"讲义", article:"图文" };
 const KIND_GLYPH = { video:"▶", pdf:"◧", article:"❖" };
@@ -83,8 +89,8 @@ const Courses = ({state, setState, toast, me, canManage})=>{
           {courses.map(c=>(
             <div key={c.id} className="course-card" onClick={()=>setOpenId(c.id)}>
               <div className="course-cover" style={{background: c.cover || "#3b4d6f"}}>
-                <div className="subj-tag">{c.subject}</div>
-                <div className="cover-mark">{c.title.slice(0,1)}</div>
+                <div className="subj-tag">{subjectShort(c.subject)}</div>
+                <div className="cover-mark">{subjectShort(c.subject)}</div>
               </div>
               <div className="course-body">
                 <h3>{c.title}</h3>
@@ -162,7 +168,7 @@ const CourseDetail = ({course, state, setState, toast, me, canManage, onBack, on
 
       <div className="course-hero" style={{background:`linear-gradient(135deg, ${course.cover} 0%, ${course.cover}cc 100%)`}}>
         <div className="row gap-8 mb-8" style={{opacity:.85}}>
-          <span className="tag" style={{background:"rgba(255,255,255,.15)", color:"#fff", border:"none"}}>{course.subject}</span>
+          <span className="tag" style={{background:"rgba(255,255,255,.15)", color:"#fff", border:"none"}}>{subjectShort(course.subject)}</span>
           <span className="muted tiny" style={{color:"rgba(255,255,255,.7)"}}>{course.lessons.length} 课时</span>
         </div>
         <h1 style={{color:"#fff", fontSize:32, maxWidth:680}}>{course.title}</h1>
@@ -252,8 +258,10 @@ const LessonView = ({lesson, course, canManage, isDone, onToggleDone, onUpdate, 
     try{
       setUploadPct(0);
       const file = await uploadRemote(f, setUploadPct);
-      setDraft({...draft, file});
-      toast("文件已上传", "ok");
+      const nextDraft = {...draft, file};
+      setDraft(nextDraft);
+      onUpdate(nextDraft);
+      toast("文件已上传并保存", "ok");
     }catch(err){
       toast(err.message || "上传失败", "danger");
     }finally{
@@ -641,4 +649,4 @@ const CourseEditor = ({course, onClose, onSave})=>{
   );
 };
 
-Object.assign(window, { Courses, SUBJECTS });
+Object.assign(window, { Courses, SUBJECTS, subjectShort });
