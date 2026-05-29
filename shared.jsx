@@ -337,8 +337,9 @@ const toUploadFile = (file, blob)=>({
   uploadedAt:Date.now(),
   storage:"vercel-blob",
 });
+const importNative = (url) => new Function("url", "return import(url)")(url);
 const uploadBlobDirect = async (file, onProgress) => {
-  const { upload } = await import("https://esm.sh/@vercel/blob@2.0.0/client");
+  const { upload } = await importNative("https://esm.sh/@vercel/blob@2.0.0/client?bundle");
   const blob = await upload(`uploads/${Date.now()}-${file.name}`, file, {
     access:"public",
     handleUploadUrl:"/api/blob-upload",
