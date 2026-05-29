@@ -327,7 +327,43 @@ const changePasswordRemote = async (payload) => apiJSON("/api/change-password", 
   method:"POST",
   body:JSON.stringify(payload),
 });
+const toUploadFile = (file, blob)=>({
+  name:file.name,
+  storedName:blob.pathname || blob.url,
+  size:file.size,
+  type:file.type || blob.contentType || "application/octet-stream",
+  url:blob.url,
+  downloadUrl:blob.downloadUrl,
+  uploadedAt:Date.now(),
+  storage:"vercel-blob",
+});
+const uploadBlobDirect = async (file, onProgress) => {
+  const { upload } = await import("https://esm.sh/@vercel/blob@2.0.0/client");
+  const blob = await upload(`uploads/${Date.now()}-${file.name}`, file, {
+    access:"public",
+    handleUploadUrl:"/api/blob-upload",
+    contentType:file.type || "application/octet-stream",
+    multipart:file.size > 8 * 1024 * 1024,
+    onUploadProgress:(evt)=>{
+      if(onProgress) onProgress(Math.round(evt.percentage || 0));
+    },
+  });
+  if(onProgress) onProgress(100);
+  return toUploadFile(file, blob);
+};
 const uploadRemote = async (file, onProgress) => {
+  const shouldUseBlobDirect = /^video\//.test(file.type || "") || file.size > 4 * 1024 * 1024;
+  if(shouldUseBlobDirect) {
+    try{
+      return await uploadBlobDirect(file, onProgress);
+    }catch(err){
+      const msg = err?.message || "上传失败";
+      if(/token|BLOB|store|not found|unauthorized|forbidden|未配置/i.test(msg)) {
+        throw new Error("视频需要先配置 Vercel Blob 云存储后才能上传。请确认 Vercel 项目里有 BLOB_READ_WRITE_TOKEN。");
+      }
+      throw new Error(msg);
+    }
+  }
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open("POST", `/api/upload?filename=${encodeURIComponent(file.name)}`);
@@ -341,7 +377,8 @@ const uploadRemote = async (file, onProgress) => {
         if(xhr.status < 200 || xhr.status >= 300) throw new Error(data.error || "上传失败");
         resolve(data.file);
       }catch(err){
-        reject(err);
+        const raw = (xhr.responseText || "").slice(0, 120);
+        reject(new Error(raw ? `上传接口返回异常：${raw}` : (err.message || "上传失败")));
       }
     };
     xhr.onerror = () => reject(new Error("上传失败，请检查网络"));

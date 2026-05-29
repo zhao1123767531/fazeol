@@ -240,7 +240,11 @@ const api = async (req, res) => {
   const url = parsePath(req);
 
   if(url.pathname === "/api/health") {
-    send(res, 200, JSON.stringify({ ok:true }));
+    send(res, 200, JSON.stringify({
+      ok:true,
+      storage: process.env.BLOB_READ_WRITE_TOKEN ? "vercel-blob" : "temporary",
+      blobConfigured: Boolean(process.env.BLOB_READ_WRITE_TOKEN),
+    }));
     return true;
   }
 
@@ -284,6 +288,31 @@ const api = async (req, res) => {
   if(url.pathname === "/api/upload" && req.method === "POST") {
     const file = await saveUpload(req, url.searchParams.get("filename"));
     send(res, 201, JSON.stringify({ ok:true, file }));
+    return true;
+  }
+
+  if(url.pathname === "/api/blob-upload" && req.method === "POST") {
+    try{
+      if(!process.env.BLOB_READ_WRITE_TOKEN) {
+        send(res, 400, JSON.stringify({ ok:false, error:"BLOB_READ_WRITE_TOKEN 未配置，无法上传视频文件" }));
+        return true;
+      }
+      const { handleUpload } = await import("@vercel/blob/client");
+      const body = await readJSON(req);
+      const jsonResponse = await handleUpload({
+        body,
+        request:req,
+        onBeforeGenerateToken: async () => ({
+          allowedContentTypes:["video/mp4", "video/quicktime", "video/webm", "application/pdf", "image/jpeg", "image/png", "image/webp", "application/octet-stream"],
+          addRandomSuffix:true,
+          tokenPayload:JSON.stringify({ createdAt:Date.now() }),
+        }),
+        onUploadCompleted: async () => {},
+      });
+      send(res, 200, JSON.stringify(jsonResponse));
+    }catch(err){
+      send(res, 400, JSON.stringify({ ok:false, error:err.message || "上传失败" }));
+    }
     return true;
   }
 
