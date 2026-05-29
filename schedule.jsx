@@ -4,6 +4,7 @@ const Schedule = ({state, setState, toast, me, canManage})=>{
   const [weekOffset, setWeekOffset] = React.useState(0);
   const [openId, setOpenId] = React.useState(null);
   const [editing, setEditing] = React.useState(null);
+  const classes = classOptions(state);
 
   // 本周一起点
   const today = new Date(); today.setHours(0,0,0,0);
@@ -14,16 +15,16 @@ const Schedule = ({state, setState, toast, me, canManage})=>{
   const sessions = state.liveSessions || [];
   const visible = sessions.filter(s=> s.endTime >= monday && s.startTime < monday + 7*86400000);
 
-  // 教师视角：本人主讲；学生视角：选课的（演示中全部学生默认选了所有）
+  // 教师视角：本人主讲；学生视角：本班课程
   const my = sessions.filter(s=>{
     if(me.role==="teacher") return s.instructorId===me.id;
-    if(me.role==="student") return (s.enrolled||[]).includes(me.id);
+    if(me.role==="student") return (s.className && s.className === me.className) || (s.enrolled||[]).includes(me.id);
     return true;
   });
 
   const myVisible = visible.filter(s=>{
     if(me.role==="teacher") return s.instructorId===me.id;
-    if(me.role==="student") return (s.enrolled||[]).includes(me.id);
+    if(me.role==="student") return (s.className && s.className === me.className) || (s.enrolled||[]).includes(me.id);
     return true;
   });
 
@@ -48,19 +49,29 @@ const Schedule = ({state, setState, toast, me, canManage})=>{
     id: uid("LV"), courseId: state.courses?.[0]?.id || "",
     subject: me.subject || "民法",
     title:"", instructor: me.name, instructorId: me.id,
-    classroom:"在线 · 教学厅",
+    className: classes[0] || "",
+    classroom:"腾讯会议",
+    meetingUrl:"",
     startTime: monday + dayStart*3600*1000,
     endTime: monday + (dayStart+1.5)*3600*1000,
-    enrolled: state.users.filter(u=>u.role==="student").map(u=>u.id),
+    enrolled: [],
     _new: true,
   });
 
   const saveSession = (s)=>{
     const next = {...state, liveSessions:[...(state.liveSessions||[])]};
     const i = next.liveSessions.findIndex(x=>x.id===s.id);
-    const clean = {...s}; delete clean._new;
+    const clean = {...s, enrolled:studentsInClass(state, s.className).map(u=>u.id), classroom:s.classroom || "腾讯会议"};
+    delete clean._new;
     if(i>=0) next.liveSessions[i] = clean;
-    else next.liveSessions.unshift(clean);
+    else {
+      next.liveSessions.unshift(clean);
+      const targets = studentsInClass(state, clean.className);
+      next.messages = [
+        ...targets.map(u=>makeMessage(u.id, "新课程安排", `您所在的「${clean.className || "未分班"}」新增课程：${clean.title}\n时间：${fmtTime(clean.startTime)}\n会议链接：${clean.meetingUrl || "待教师补充"}`, "schedule")),
+        ...(next.messages || []),
+      ];
+    }
     setState(next);
     toast(s._new?"直播课已创建":"已保存", "ok");
     setEditing(null);
@@ -193,7 +204,7 @@ const Schedule = ({state, setState, toast, me, canManage})=>{
                     {ls==="pending" && <Tag>未开始</Tag>}
                   </div>
                   <h3>{s.title}</h3>
-                  <div className="meta">{s.instructor} · {s.classroom} · {fmtClock(s.startTime)} – {fmtClock(s.endTime)}</div>
+                  <div className="meta">{s.instructor} · {s.className || "未指定班级"} · {fmtClock(s.startTime)} – {fmtClock(s.endTime)}</div>
                 </div>
                 <div>
                   {ls==="live"
@@ -207,7 +218,7 @@ const Schedule = ({state, setState, toast, me, canManage})=>{
       )}
 
       {cur && <SessionModal session={cur} state={state}
-        canManage={canManage && cur.instructorId===me.id}
+        canManage={canManage && (me.role==="admin" || cur.instructorId===me.id)}
         onClose={()=>setOpenId(null)}
         onEdit={()=>{ setEditing(cur); setOpenId(null); }}
         onDelete={()=>delSession(cur.id)}
@@ -232,7 +243,7 @@ const SessionModal = ({session, state, canManage, onClose, onEdit, onDelete, toa
         </>
       ) : (
         ls==="live"
-          ? <button className="btn accent" onClick={()=>{toast("正在进入直播间…","ok"); onClose();}}>进入直播</button>
+          ? <button className="btn accent" onClick={()=>{ if(session.meetingUrl) window.open(session.meetingUrl, "_blank"); toast(session.meetingUrl ? "正在打开腾讯会议…" : "教师尚未填写会议链接", session.meetingUrl ? "ok" : "danger"); onClose();}}>进入直播</button>
           : ls==="ended"
             ? (course ? <button className="btn" onClick={onClose}>查看录播课程 →</button> : <button className="btn" onClick={onClose}>关闭</button>)
             : <button className="btn ghost" onClick={onClose}>关闭</button>
@@ -247,9 +258,10 @@ const SessionModal = ({session, state, canManage, onClose, onEdit, onDelete, toa
       <div className="kv mb-8"><span className="k" style={{minWidth:80}}>主讲教师</span><span className="v">{session.instructor}</span></div>
       <div className="kv mb-8"><span className="k" style={{minWidth:80}}>时间</span>
         <span className="v mono">{fmtTime(session.startTime)} — {fmtClock(session.endTime)}</span></div>
-      <div className="kv mb-8"><span className="k" style={{minWidth:80}}>地点</span><span className="v">{session.classroom}</span></div>
+      <div className="kv mb-8"><span className="k" style={{minWidth:80}}>班级</span><span className="v">{session.className || "未指定"}</span></div>
+      <div className="kv mb-8"><span className="k" style={{minWidth:80}}>会议链接</span><span className="v">{session.meetingUrl ? <a href={session.meetingUrl} target="_blank">{session.meetingUrl}</a> : "待补充"}</span></div>
       {course && <div className="kv mb-8"><span className="k" style={{minWidth:80}}>所属课程</span><span className="v">{course.title}</span></div>}
-      <div className="kv mb-8"><span className="k" style={{minWidth:80}}>选课人数</span><span className="v mono">{(session.enrolled||[]).length} 人</span></div>
+      <div className="kv mb-8"><span className="k" style={{minWidth:80}}>班级人数</span><span className="v mono">{studentsInClass(state, session.className).length || (session.enrolled||[]).length} 人</span></div>
 
       {ls==="pending" && (
         <div className="card flat mt-16" style={{padding:"16px 18px", background:"var(--paper-2)"}}>
@@ -266,6 +278,7 @@ const SessionModal = ({session, state, canManage, onClose, onEdit, onDelete, toa
 const SessionEditor = ({session, state, onClose, onSave})=>{
   const [s, setS] = React.useState({...session});
   const courses = state.courses || [];
+  const classes = classOptions(state);
   const subjects = [...new Set([...courses.map(c=>c.subject), "民法","刑法","法理学","宪法","行政法"])];
   return (
     <Modal wide title={session._new?"新建直播课":"编辑直播课"} onClose={onClose}
@@ -284,8 +297,13 @@ const SessionEditor = ({session, state, onClose, onSave})=>{
           <input className="input" type="datetime-local" value={fmtTimeLocal(s.startTime)} onChange={e=>setS({...s, startTime:parseLocal(e.target.value)})} /></div>
         <div className="field"><label>结束时间</label>
           <input className="input" type="datetime-local" value={fmtTimeLocal(s.endTime)} onChange={e=>setS({...s, endTime:parseLocal(e.target.value)})} /></div>
-        <div className="field"><label>地点</label>
-          <input className="input" value={s.classroom} onChange={e=>setS({...s, classroom:e.target.value})} /></div>
+        <div className="field"><label>班级</label>
+          <select className="select" value={s.className || ""} onChange={e=>setS({...s, className:e.target.value})}>
+            <option value="">未指定</option>
+            {classes.map(c=><option key={c} value={c}>{c}</option>)}
+          </select></div>
+        <div className="field"><label>腾讯会议链接</label>
+          <input className="input" value={s.meetingUrl || ""} onChange={e=>setS({...s, meetingUrl:e.target.value, classroom:"腾讯会议"})} placeholder="https://meeting.tencent.com/..." /></div>
         <div className="field"><label>关联录播课程</label>
           <select className="select" value={s.courseId||""} onChange={e=>setS({...s, courseId:e.target.value})}>
             <option value="">— 无 —</option>

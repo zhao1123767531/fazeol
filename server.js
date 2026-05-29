@@ -78,8 +78,16 @@ const applyStateDefaults = (state) => ({
   settings:{
     loginQuote:"法不阿贵，绳不挠曲。",
     loginQuoteSource:"《韩非子》",
+    loginQuotes:[
+      {text:"法不阿贵，绳不挠曲。", source:"《韩非子》"},
+      {text:"徒善不足以为政，徒法不能以自行。", source:"《孟子》"},
+      {text:"法律是治国之重器，良法是善治之前提。", source:""},
+    ],
+    termsTitle:"法泽在线用户条款",
+    termsBody:"1. 平台账号由管理员统一创建，用户应妥善保管账号和密码，不得转借他人使用。\n2. 用户上传的课程资料、试卷、答卷、解析等内容应符合法律法规和教学管理要求。\n3. 考试期间应遵守考试规则，系统会记录开始答题、提交时间及延迟交卷等状态。\n4. 平台仅用于教学、训练和考试管理场景。未经授权，不得复制、传播课程内容或他人答卷。\n5. 继续登录即表示您已阅读、理解并同意遵守本条款。",
     ...(state?.settings || {}),
   },
+  classes: state?.classes || [],
 });
 
 const publicState = (state) => ({

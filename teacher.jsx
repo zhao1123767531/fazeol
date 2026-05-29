@@ -19,6 +19,8 @@ const Teacher = ({ state, setState, toast, me, doLogout }) => {
   }, 0);
 
   const unread = state.messages.filter((m) => m.userId === me.id && !m.read).length;
+  const myCourseIds = new Set((state.courses || []).filter(c=>c.instructorId===me.id).map(c=>c.id));
+  const newQuestions = (state.courseQA || []).filter(q=>myCourseIds.has(q.courseId) && !(q.replies || []).some(r=>r.by===me.id)).length;
 
   return (
     <div className="app">
@@ -26,7 +28,7 @@ const Teacher = ({ state, setState, toast, me, doLogout }) => {
         <div className="brand">法泽在线<span className="tag-em">FA · ZE · ONLINE</span></div>
         <div className="section">教学</div>
         <NavItem id="schedule" cur={view} set={(v) => {setView(v);setCurrentExamId(null);}} label="我的课表" />
-        <NavItem id="courses" cur={view} set={(v) => {setView(v);setCurrentExamId(null);}} label="课程管理" />
+        <NavItem id="courses" cur={view} set={(v) => {setView(v);setCurrentExamId(null);}} label="课程管理" badge={newQuestions || null} />
         <div className="section">考务</div>
         <NavItem id="exams" cur={view} set={(v) => {setView(v);setCurrentExamId(null);}} label="考试管理" badge={pendingCount || null} />
         <div className="section">沟通</div>
@@ -81,7 +83,14 @@ const TeacherExams = ({ state, setState, toast, me, myExams, onOpen }) => {
     const i = next.exams.findIndex((e) => e.id === exam.id);
     const clean = { ...exam };delete clean._new;
     if (i >= 0) next.exams[i] = clean;else
-    next.exams.unshift(clean);
+    {
+      next.exams.unshift(clean);
+      const targets = (state.users || []).filter(u=>u.role==="student");
+      next.messages = [
+        ...targets.map(u=>makeMessage(u.id, "新考试发布", `新考试《${clean.title}》已发布。\n科目：${clean.subject || "未设置"}\n开始：${fmtTime(clean.startTime)}\n请前往「模拟测试」查看。`, "exam")),
+        ...(next.messages || []),
+      ];
+    }
     setState(next);
     toast(exam._new ? "考试已发布" : "已保存", "ok");
     setEditing(null);

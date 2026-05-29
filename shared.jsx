@@ -16,7 +16,15 @@ const initialState = () => {
   settings:{
     loginQuote:"法不阿贵，绳不挠曲。",
     loginQuoteSource:"《韩非子》",
+    loginQuotes:[
+      {text:"法不阿贵，绳不挠曲。", source:"《韩非子》"},
+      {text:"徒善不足以为政，徒法不能以自行。", source:"《孟子》"},
+      {text:"法律是治国之重器，良法是善治之前提。", source:""},
+    ],
+    termsTitle:"法泽在线用户条款",
+    termsBody:"1. 平台账号由管理员统一创建，用户应妥善保管账号和密码，不得转借他人使用。\n2. 用户上传的课程资料、试卷、答卷、解析等内容应符合法律法规和教学管理要求。\n3. 考试期间应遵守考试规则，系统会记录开始答题、提交时间及延迟交卷等状态。\n4. 平台仅用于教学、训练和考试管理场景。未经授权，不得复制、传播课程内容或他人答卷。\n5. 继续登录即表示您已阅读、理解并同意遵守本条款。",
   },
+  classes:["法学2401", "法学2402"],
 
   users: [
     { id:"admin", name:"系统管理员", role:"admin", password:"admin", firstLogin:false },
@@ -304,6 +312,26 @@ const loadState = () => {
 };
 const saveState = (s)=> localStorage.setItem(STORE_KEY, JSON.stringify(s));
 const resetState = ()=>{ localStorage.removeItem(STORE_KEY); localStorage.removeItem("faze_session"); };
+
+const DEFAULT_TERMS = "1. 平台账号由管理员统一创建，用户应妥善保管账号和密码，不得转借他人使用。\n2. 用户上传的课程资料、试卷、答卷、解析等内容应符合法律法规和教学管理要求。\n3. 考试期间应遵守考试规则，系统会记录开始答题、提交时间及延迟交卷等状态。\n4. 平台仅用于教学、训练和考试管理场景。未经授权，不得复制、传播课程内容或他人答卷。\n5. 继续登录即表示您已阅读、理解并同意遵守本条款。";
+const defaultQuotes = [
+  {text:"法不阿贵，绳不挠曲。", source:"《韩非子》"},
+  {text:"徒善不足以为政，徒法不能以自行。", source:"《孟子》"},
+  {text:"法律是治国之重器，良法是善治之前提。", source:""},
+];
+const classOptions = (state)=> {
+  const set = new Set([...(state.classes || [])]);
+  (state.users || []).forEach(u=>{ if(u.role === "student" && u.className) set.add(u.className); });
+  return [...set].filter(Boolean).sort((a,b)=>a.localeCompare(b, "zh-Hans-CN"));
+};
+const studentsInClass = (state, className)=> (state.users || []).filter(u=>u.role === "student" && (!className || u.className === className));
+const makeMessage = (userId, title, body, type="notice")=>({
+  id:uid("M"), userId, title, body, type, time:Date.now(), read:false,
+});
+const notifyUsers = (state, users, title, body, type="notice")=>({
+  ...state,
+  messages:[...users.map(u=>makeMessage(u.id, title, body, type)), ...(state.messages || [])],
+});
 
 const apiJSON = async (url, options={}) => {
   const res = await fetch(url, {
@@ -687,6 +715,7 @@ const ProfileModal = ({me, state, setState, onClose, toast})=>{
 Object.assign(window, {
   STORE_KEY, loadState, saveState, resetState,
   loadStateRemote, saveStateRemote, loginRemote, changePasswordRemote, uploadRemote,
+  defaultQuotes, DEFAULT_TERMS, classOptions, studentsInClass, makeMessage, notifyUsers,
   fmtBytes, fmtTime, fmtDate, fmtClock, fmtRel, fmtTimeLocal, parseLocal,
   examStatus, statusLabel, statusTagClass, liveStatus, uid, pad2,
   Toast, Modal, Empty, Tag, Countdown, useNow,

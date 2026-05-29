@@ -24,7 +24,15 @@ const Courses = ({state, setState, toast, me, canManage})=>{
     const next = {...state, courses: [...(state.courses||[])]};
     const idx = next.courses.findIndex(x=>x.id===c.id);
     if(idx>=0) next.courses[idx] = c;
-    else next.courses.unshift({...c, createdAt: Date.now()});
+    else {
+      const clean = {...c, createdAt: Date.now()};
+      next.courses.unshift(clean);
+      const targets = (state.users || []).filter(u=>u.role==="student");
+      next.messages = [
+        ...targets.map(u=>makeMessage(u.id, "新课程上线", `新课程《${clean.title}》已上线。\n学科：${clean.subject || "未设置"}\n主讲：${clean.instructor || "未设置"}\n请前往「课程学习」查看。`, "course")),
+        ...(next.messages || []),
+      ];
+    }
     setState(next);
     toast(idx>=0 ? "课程已保存" : "课程已创建", "ok");
     setEditing(null);

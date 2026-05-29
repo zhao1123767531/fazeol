@@ -103,8 +103,16 @@ const Login = ({ users, state, setState, doLogin, toast }) => {
   const [termsAgreed, setTermsAgreed] = React.useState(false);
   const [termsModal, setTermsModal] = React.useState(false);
   const [confirmTerms, setConfirmTerms] = React.useState(false);
-  const quote = state.settings?.loginQuote || "法不阿贵，绳不挠曲。";
-  const quoteSource = state.settings?.loginQuoteSource || "《韩非子》";
+  const quoteItems = (state.settings?.loginQuotes || []).filter(q=>q?.text?.trim()).length
+    ? state.settings.loginQuotes.filter(q=>q?.text?.trim())
+    : [{ text:state.settings?.loginQuote || "法不阿贵，绳不挠曲。", source:state.settings?.loginQuoteSource || "《韩非子》" }, ...defaultQuotes.slice(1)];
+  const [quoteIndex, setQuoteIndex] = React.useState(0);
+  React.useEffect(()=>{
+    if(quoteItems.length <= 1) return;
+    const timer = setInterval(()=>setQuoteIndex(i=>(i+1)%quoteItems.length), 10000);
+    return ()=>clearInterval(timer);
+  }, [quoteItems.length]);
+  const activeQuote = quoteItems[quoteIndex % quoteItems.length] || defaultQuotes[0];
 
   const submit = async (forceTerms=false) => {
     if(!termsAgreed && !forceTerms){
@@ -133,8 +141,8 @@ const Login = ({ users, state, setState, doLogin, toast }) => {
           <div className="tag">FA · ZE · ONLINE</div>
         </div>
         <div className="quote">
-          {quote}<br />
-          <span>{quoteSource}</span>
+          {activeQuote.text}<br />
+          <span>{activeQuote.source}</span>
         </div>
         <div className="seal"></div>
         <div className="footer">专注中国政法大学考研
@@ -147,7 +155,7 @@ const Login = ({ users, state, setState, doLogin, toast }) => {
           <div className="muted tiny mb-16">账号由管理员统一创建。教师账号也只能由管理员添加。</div>
 
           <div className="field">
-            <label>账号（学号 / 工号 / admin）</label>
+            <label>账号</label>
             <input className="input" value={id} onChange={(e) => setId(e.target.value)} onKeyDown={(e) => e.key === "Enter" && submit()} placeholder="如 S2024001" autoFocus />
           </div>
           <div className="field">
@@ -170,7 +178,7 @@ const Login = ({ users, state, setState, doLogin, toast }) => {
           </div>
         </div>
       </div>
-      {termsModal && <TermsModal onClose={()=>setTermsModal(false)} />}
+      {termsModal && <TermsModal settings={state.settings || {}} onClose={()=>setTermsModal(false)} />}
       {confirmTerms && (
         <Modal title="请确认用户条款" onClose={()=>setConfirmTerms(false)}
           foot={<>
@@ -187,15 +195,11 @@ const Login = ({ users, state, setState, doLogin, toast }) => {
 
 };
 
-const TermsModal = ({onClose}) => (
+const TermsModal = ({settings, onClose}) => (
   <Modal title="用户条款" onClose={onClose}>
     <div className="terms-content">
-      <h4>法泽在线用户条款</h4>
-      <p>1. 平台账号由管理员统一创建，用户应妥善保管账号和密码，不得转借他人使用。</p>
-      <p>2. 用户上传的课程资料、试卷、答卷、解析等内容应符合法律法规和教学管理要求。</p>
-      <p>3. 考试期间应遵守考试规则，系统会记录开始答题、提交时间及延迟交卷等状态。</p>
-      <p>4. 平台仅用于教学、训练和考试管理场景。未经授权，不得复制、传播课程内容或他人答卷。</p>
-      <p>5. 继续登录即表示您已阅读、理解并同意遵守本条款。</p>
+      <h4>{settings.termsTitle || "法泽在线用户条款"}</h4>
+      {(settings.termsBody || DEFAULT_TERMS).split(/\n+/).map((line, i)=><p key={i}>{line}</p>)}
     </div>
     <div className="modal-foot">
       <button className="btn" onClick={onClose}>我知道了</button>
@@ -221,7 +225,7 @@ const FirstLoginPwd = ({ me, onSubmit }) => {
       <div className="modal">
         <div className="modal-head"><h3>首次登录 · 请设置新密码</h3></div>
         <div className="muted tiny mb-16">
-          欢迎，{me.name}。出于安全考虑，请将初始密码（账号）修改为您自己的密码。
+          欢迎，{me.name}。出于安全考虑，请将初始密码修改为您自己的密码。
         </div>
         <div className="field"><label>新密码</label>
           <input className="input" type="password" value={p1} onChange={(e) => {setP1(e.target.value);setErr("");}} autoFocus placeholder="至少 6 位" /></div>

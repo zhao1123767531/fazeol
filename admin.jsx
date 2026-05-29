@@ -127,6 +127,8 @@ const AdminAccounts = ({ state, setState, toast }) => {
   const [search, setSearch] = React.useState("");
   const [showImport, setShowImport] = React.useState(false);
   const [showManual, setShowManual] = React.useState(false);
+  const [newClass, setNewClass] = React.useState("");
+  const classes = classOptions(state);
 
   const filtered = state.users.filter((u) => {
     if (u.id === "admin") return false;
@@ -138,7 +140,7 @@ const AdminAccounts = ({ state, setState, toast }) => {
   const downloadTemplate = () => {
     // 提供 CSV（兼容 xlsx 打开）和真正 xlsx 两个版本——这里输出 CSV 模板
     const rows = [
-    ["账号", "姓名", "角色（student/teacher）", "班级（学生选填）"],
+    ["账号", "姓名", "角色", "班级"],
     ["S2024010", "王某某", "student", "法学2403"],
     ["T010", "李某某", "teacher", ""]];
 
@@ -180,6 +182,22 @@ const AdminAccounts = ({ state, setState, toast }) => {
     });
     toast(`已重置 ${id} 的密码（初始密码＝账号）`, "ok");
   };
+  const setUserClass = (id, className) => {
+    setState({
+      ...state,
+      users: state.users.map(u=>u.id===id ? {...u, className} : u),
+      classes: [...new Set([...(state.classes || []), className].filter(Boolean))],
+    });
+    toast("班级已更新", "ok");
+  };
+  const addClass = () => {
+    const name = newClass.trim();
+    if(!name) return;
+    if(classes.includes(name)) {toast("班级已存在", "danger"); return;}
+    setState({...state, classes:[...(state.classes || []), name]});
+    setNewClass("");
+    toast("班级已添加", "ok");
+  };
 
   return (
     <div>
@@ -195,6 +213,7 @@ const AdminAccounts = ({ state, setState, toast }) => {
         </div>
       </div>
 
+      <div className="grid" style={{gridTemplateColumns:"1fr 280px", gap:16}}>
       <div className="card">
         <div className="row between mb-16">
           <div className="tabs" style={{ margin: 0, border: "none" }}>
@@ -220,7 +239,14 @@ const AdminAccounts = ({ state, setState, toast }) => {
                 <td className="mono">{u.id}</td>
                 <td>{u.name}</td>
                 <td><Tag kind={u.role === "teacher" ? "accent" : ""}>{u.role === "teacher" ? "教师" : "学生"}</Tag></td>
-                <td className="muted">{u.className || "—"}</td>
+                <td>
+                  {u.role === "student" ? (
+                    <select className="select sm-select" value={u.className || ""} onChange={(e)=>setUserClass(u.id, e.target.value)}>
+                      <option value="">未分班</option>
+                      {classes.map(c=><option key={c} value={c}>{c}</option>)}
+                    </select>
+                  ) : <span className="muted">—</span>}
+                </td>
                 <td>{u.firstLogin ? <Tag kind="warn">待首次修改</Tag> : <Tag kind="ok">已设置</Tag>}</td>
                 <td className="right">
                   <button className="btn subtle sm" onClick={() => resetPwd(u.id)}>重置密码</button>
@@ -231,9 +257,26 @@ const AdminAccounts = ({ state, setState, toast }) => {
           </tbody>
         </table>
       </div>
+      <div className="card">
+        <h3 className="mb-16">班级</h3>
+        <div className="row gap-8 mb-16">
+          <input className="input" value={newClass} onChange={(e)=>setNewClass(e.target.value)} onKeyDown={(e)=>e.key==="Enter"&&addClass()} placeholder="如 法学2403" />
+          <button className="btn sm" onClick={addClass}>添加</button>
+        </div>
+        <div className="col gap-8">
+          {classes.map(c=>{
+            const count = state.users.filter(u=>u.role==="student" && u.className===c).length;
+            return <div key={c} className="row between" style={{borderBottom:"1px solid var(--ink-100)", paddingBottom:8}}>
+              <span>{c}</span><span className="muted tiny">{count} 人</span>
+            </div>;
+          })}
+          {classes.length===0 && <div className="muted tiny">暂无班级</div>}
+        </div>
+      </div>
+      </div>
 
       {showImport && <ImportModal onClose={() => setShowImport(false)} onImport={onImport} toast={toast} />}
-      {showManual && <ManualAddModal onClose={() => setShowManual(false)} onAdd={(u) => {
+      {showManual && <ManualAddModal classes={classes} onClose={() => setShowManual(false)} onAdd={(u) => {
         if (state.users.find((x) => x.id === u.id)) {toast("账号已存在", "danger");return false;}
         const clean = {
           id:u.id.trim(),
@@ -244,7 +287,7 @@ const AdminAccounts = ({ state, setState, toast }) => {
           className:u.role === "student" ? (u.className || "") : "",
           subject:u.role === "teacher" ? (u.subject || "") : "",
         };
-        setState({ ...state, users: [...state.users, clean] });
+        setState({ ...state, users: [...state.users, clean], classes:[...new Set([...(state.classes || []), clean.className].filter(Boolean))] });
         toast("已添加", "ok");
         return true;
       }} />}
@@ -329,7 +372,7 @@ const ImportModal = ({ onClose, onImport, toast }) => {
 
 };
 
-const ManualAddModal = ({ onClose, onAdd }) => {
+const ManualAddModal = ({ classes=[], onClose, onAdd }) => {
   const [u, setU] = React.useState({ id: "", name: "", role: "student", className: "", subject:"" });
   return (
     <Modal onClose={onClose} title="管理员添加账号"
@@ -338,7 +381,7 @@ const ManualAddModal = ({ onClose, onAdd }) => {
         <button className="btn" disabled={!u.id || !u.name} onClick={() => {if (onAdd(u)) onClose();}}>添加</button>
       </>}>
       <div className="grid cols-2">
-        <div className="field"><label>账号（学号/工号）</label>
+        <div className="field"><label>账号</label>
           <input className="input" value={u.id} onChange={(e) => setU({ ...u, id: e.target.value })} placeholder="如 S2024010" /></div>
         <div className="field"><label>姓名</label>
           <input className="input" value={u.name} onChange={(e) => setU({ ...u, name: e.target.value })} /></div>
@@ -348,8 +391,9 @@ const ManualAddModal = ({ onClose, onAdd }) => {
             <option value="teacher">教师</option>
           </select></div>
         {u.role === "student" ? (
-          <div className="field"><label>班级（学生选填）</label>
-            <input className="input" value={u.className} onChange={(e) => setU({ ...u, className: e.target.value })} /></div>
+          <div className="field"><label>班级</label>
+            <input className="input" list="class-list" value={u.className} onChange={(e) => setU({ ...u, className: e.target.value })} />
+            <datalist id="class-list">{classes.map(c=><option key={c} value={c} />)}</datalist></div>
         ) : (
           <div className="field"><label>学科（教师必填）</label>
             <input className="input" value={u.subject} onChange={(e) => setU({ ...u, subject: e.target.value })} placeholder="如 民法、刑法" /></div>
@@ -380,7 +424,14 @@ const AdminExams = ({ state, setState, toast, me }) => {
     const idx = next.exams.findIndex((e) => e.id === exam.id);
     const clean = { ...exam }; delete clean._new;
     if (idx >= 0) next.exams[idx] = clean;
-    else next.exams.unshift(clean);
+    else {
+      next.exams.unshift(clean);
+      const targets = (state.users || []).filter(u=>u.role==="student");
+      next.messages = [
+        ...targets.map(u=>makeMessage(u.id, "新考试发布", `新考试《${clean.title}》已发布。\n科目：${clean.subject || "未设置"}\n开始：${fmtTime(clean.startTime)}\n请前往「模拟测试」查看。`, "exam")),
+        ...(next.messages || []),
+      ];
+    }
     setState(next);
     toast(exam._new ? "考试已创建" : "已保存", "ok");
     setEditing(null);
@@ -517,15 +568,28 @@ const AdminBroadcast = ({ state, setState, toast }) => {
 };
 
 const AdminSettings = ({ state, setState, toast }) => {
-  const [quote, setQuote] = React.useState(state.settings?.loginQuote || "法不阿贵，绳不挠曲。");
-  const [source, setSource] = React.useState(state.settings?.loginQuoteSource || "《韩非子》");
-  const saveQuote = () => {
+  const [quotes, setQuotes] = React.useState(
+    (state.settings?.loginQuotes && state.settings.loginQuotes.length ? state.settings.loginQuotes : defaultQuotes)
+      .map(q=>({text:q.text || "", source:q.source || ""}))
+  );
+  const [termsTitle, setTermsTitle] = React.useState(state.settings?.termsTitle || "法泽在线用户条款");
+  const [termsBody, setTermsBody] = React.useState(state.settings?.termsBody || DEFAULT_TERMS);
+  const saveSettings = () => {
+    const cleanQuotes = quotes.filter(q=>q.text.trim()).map(q=>({text:q.text.trim(), source:q.source.trim()}));
     setState({
       ...state,
-      settings:{ ...(state.settings || {}), loginQuote:quote.trim(), loginQuoteSource:source.trim() },
+      settings:{
+        ...(state.settings || {}),
+        loginQuote:cleanQuotes[0]?.text || "法不阿贵，绳不挠曲。",
+        loginQuoteSource:cleanQuotes[0]?.source || "《韩非子》",
+        loginQuotes:cleanQuotes.length ? cleanQuotes : defaultQuotes,
+        termsTitle:termsTitle.trim() || "法泽在线用户条款",
+        termsBody:termsBody.trim() || DEFAULT_TERMS,
+      },
     });
-    toast("登录页名言已更新", "ok");
+    toast("系统文案已更新", "ok");
   };
+  const updateQuote = (i, patch)=> setQuotes(qs=>qs.map((q, idx)=>idx===i?{...q, ...patch}:q));
   return (
     <div>
       <div className="page-head">
@@ -549,18 +613,32 @@ const AdminSettings = ({ state, setState, toast }) => {
         </div>
       </div>
       <div className="card mt-16">
-        <h3 className="mb-16">登录页法律名言</h3>
-        <div className="field"><label>名言</label>
-          <textarea className="textarea" style={{minHeight:88}} value={quote} onChange={(e)=>setQuote(e.target.value)} /></div>
-        <div className="field"><label>出处 / 作者</label>
-          <input className="input" value={source} onChange={(e)=>setSource(e.target.value)} placeholder="如 《韩非子》" /></div>
-        <div className="row gap-8">
-          <button className="btn" disabled={!quote.trim()} onClick={saveQuote}>保存名言</button>
-          <button className="btn ghost" onClick={()=>{
-            setQuote("徒善不足以为政，徒法不能以自行。");
-            setSource("《孟子》");
-          }}>换一条示例</button>
+        <div className="row between mb-16">
+          <h3>登录页法律名言</h3>
+          <button className="btn ghost sm" onClick={()=>setQuotes([...quotes, {text:"", source:""}])}>＋ 添加</button>
         </div>
+        <div className="col gap-12">
+          {quotes.map((q, i)=>(
+            <div key={i} className="grid cols-2 gap-12">
+              <div className="field"><label>名言</label>
+                <input className="input" value={q.text} onChange={(e)=>updateQuote(i, {text:e.target.value})} /></div>
+              <div className="field"><label>出处 / 作者</label>
+                <div className="row gap-8">
+                  <input className="input" value={q.source} onChange={(e)=>updateQuote(i, {source:e.target.value})} placeholder="如 《韩非子》" />
+                  {quotes.length > 1 && <button className="btn danger sm" onClick={()=>setQuotes(quotes.filter((_, idx)=>idx!==i))}>删除</button>}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className="card mt-16">
+        <h3 className="mb-16">用户条款</h3>
+        <div className="field"><label>标题</label>
+          <input className="input" value={termsTitle} onChange={(e)=>setTermsTitle(e.target.value)} /></div>
+        <div className="field"><label>条款内容</label>
+          <textarea className="textarea" style={{minHeight:180}} value={termsBody} onChange={(e)=>setTermsBody(e.target.value)} /></div>
+        <button className="btn" onClick={saveSettings}>保存名言与条款</button>
       </div>
     </div>);
 
